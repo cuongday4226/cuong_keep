@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:super_clipboard/super_clipboard.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../view_models/notes_view_model.dart';
 import '../models/database.dart';
+import '../utils/color_utils.dart';
 
 // NoteEditorScreen: Màn hình chỉnh sửa/thêm mới ghi chú
 // StatefulWidget là một widget CÓ LƯU TRẠNG THÁI BÊN TRONG NÓ.
@@ -23,8 +29,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   final _titleController = TextEditingController(); // Controller của khung gõ tiêu đề
   final _contentController = TextEditingController(); // Controller của khung gõ nội dung
   
-  // Biến lưu giữ màu sắc hiện tại đang chọn
+  // Biến lưu màu sắc hiện tại đang chọn
   int? _selectedColor;
+
+  // Biến lưu mảng danh sách các đường dẫn hình ảnh của ghi chú
+  List<String> _imagePaths = [];
   
   // Biến lưu thông tin ghi chú cũ (nếu ta đang sửa)
   Note? _existingNote;
@@ -61,12 +70,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       // Tìm đúng ghi chú có id bằng với noteId được truyền vào
       final note = viewModel.notes.firstWhere((n) => n.id == widget.noteId);
       
-      // Hàm setState() ra lệnh cho Flutter: "Biến của tao vừa thay đổi đó, hãy vẽ lại giao diện đi!"
       setState(() {
         _existingNote = note; // Lưu đối tượng ghi chú cũ lại
         _titleController.text = note.title; // Đẩy chữ tiêu đề vào khung nhập
         _contentController.text = note.content; // Đẩy chữ nội dung vào khung nhập
         _selectedColor = note.color; // Cập nhật màu
+        _imagePaths = note.imagePaths != null ? List<String>.from(note.imagePaths!) : []; // Cập nhật danh sách ảnh
       });
     } catch (e) {
       // Không tìm thấy ghi chú (tránh lỗi)
@@ -82,23 +91,43 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     super.dispose();
   }
 
-  // Hàm lưu ghi chú
-  void _saveNote() {
-    final title = _titleController.text.trim(); // Lấy chữ ở khung tiêu đề và cắt khoảng trắng 2 đầu
-    final content = _contentController.text.trim(); // Lấy chữ ở khung nội dung
+  bool _isSaving = false;
 
-    // Nếu cả tiêu đề và nội dung đều trống -> KHÔNG lưu gì cả, thoát hàm
-    if (title.isEmpty && content.isEmpty) {
+  // Hàm lưu ghi chú và thoát
+  Future<void> _saveNoteAndPop() async {
+    if (_isSaving) return;
+    _isSaving = true;
+
+    final title = _titleController.text.trim();
+    final content = _contentController.text.trim();
+
+    // Nếu cả tiêu đề, nội dung và ảnh đều trống -> KHÔNG lưu gì cả
+    if (title.isEmpty && content.isEmpty && _imagePaths.isEmpty) {
+      if (mounted) context.pop();
       return;
     }
 
     final viewModel = context.read<NotesViewModel>();
-    // Nếu là ghi chú đã có từ trước (Đang sửa)
-    if (_existingNote != null) {
-      viewModel.updateNote(_existingNote!.id, title, content, _selectedColor);
-    } else {
-      // Nếu là ghi chú mới
-      viewModel.addNote(title, content, _selectedColor);
+    final pathsToSave = _imagePaths.isEmpty ? null : _imagePaths;
+    
+    try {
+      // Nếu là ghi chú đã có từ trước (Đang sửa)
+      if (_existingNote != null) {
+        await viewModel.updateNote(_existingNote!.id, title, content, _selectedColor, pathsToSave);
+      } else {
+        // Nếu là ghi chú mới
+        await viewModel.addNote(title, content, _selectedColor, pathsToSave);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi khi lưu: Vui lòng khởi động lại ứng dụng hoàn toàn (Tắt ở System Tray).')),
+        );
+      }
+    }
+
+    if (mounted) {
+      context.pop();
     }
   }
 
@@ -107,7 +136,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     if (_existingNote != null) {
       context.read<NotesViewModel>().deleteNote(_existingNote!.id);
     }
-    context.pop(); // pop() nghĩa là đóng màn hình hiện tại lại (quay về Trang chủ)
+    context.pop();
   }
 
   // Hàm build() chứa toàn bộ giao diện màn hình
@@ -117,14 +146,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     return PopScope(
       onPopInvoked: (didPop) {
         if (!didPop) {
-          _saveNote(); // Tự động lưu trước khi thoát
-          context.pop(); // Thoát màn hình
+          _saveNoteAndPop(); // Tự động lưu và thoát
         }
       },
       canPop: false, // Ngăn hành vi quay lại mặc định để ép chạy hàm onPopInvoked ở trên
       child: Scaffold(
-        // Màu nền của nguyên màn hình phụ thuộc vào màu người dùng đã chọn, nếu chưa chọn thì lấy màu mặc định
-        backgroundColor: _selectedColor != null ? Color(_selectedColor!) : Theme.of(context).scaffoldBackgroundColor,
+        // Màu nền của nguyên màn hình phụ thuộc vào màu người dùng đã chọn
+        backgroundColor: ColorUtils.getAdaptiveColor(context, _selectedColor),
         appBar: AppBar(
           backgroundColor: Colors.transparent, // AppBar trong suốt để hòa làm một với màu nền
           elevation: 0, // Không có bóng đổ (làm cho phẳng)
@@ -135,28 +163,73 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 icon: const Icon(Icons.delete_outline),
                 onPressed: _deleteNote,
               ),
-            // Nút Bảng màu
-            IconButton(
-              icon: const Icon(Icons.color_lens_outlined),
-              onPressed: () {
-                _showColorPicker(context); // Mở cửa sổ nhỏ dưới đáy để chọn màu
-              },
-            ),
+            // Nút Bảng màu được dời xuống thanh BottomAppBar bên dưới
             // Nút Dấu tích (lưu thủ công)
             IconButton(
               icon: const Icon(Icons.check),
-              onPressed: () {
-                _saveNote();
-                context.pop(); // Lưu xong thì quay ra ngoài
-              },
+              onPressed: () => _saveNoteAndPop(),
             ),
           ],
         ),
-        // Phần thân chứa 2 ô điền văn bản
-        body: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0), // Căn lề hai bên và trên dưới
-          child: Column(
-            children: [
+        // Phần thân chứa ảnh và 2 ô điền văn bản
+        body: Focus(
+          autofocus: true,
+          onKeyEvent: (node, event) {
+            // Lắng nghe tổ hợp phím Ctrl + V
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.keyV &&
+                HardwareKeyboard.instance.isControlPressed) {
+              _pasteImage();
+              // Trả về ignored để TextField vẫn tiếp tục xử lý việc dán TEXT bình thường
+              return KeyEventResult.ignored;
+            }
+            return KeyEventResult.ignored;
+          },
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Hiển thị danh sách ảnh nếu có
+                    if (_imagePaths.isNotEmpty)
+                      SizedBox(
+                        height: 200,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _imagePaths.length,
+                    itemBuilder: (context, index) {
+                      final path = _imagePaths[index];
+                      return Container(
+                        margin: const EdgeInsets.only(right: 16, bottom: 16),
+                        child: Stack(
+                          alignment: Alignment.topRight,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(
+                                File(path),
+                                fit: BoxFit.contain,
+                                height: 200,
+                              ),
+                            ),
+                            // Nút xóa ảnh
+                            IconButton(
+                              icon: const Icon(Icons.cancel, color: Colors.black54),
+                              onPressed: () {
+                                setState(() {
+                                  _imagePaths.removeAt(index);
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
               // TextField là widget tạo ô điền chữ (Ô tiêu đề)
               TextField(
                 controller: _titleController,
@@ -183,9 +256,95 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               ),
             ],
           ),
+          ),
+          ),
+          ),
+        ),
+        // THANH CÔNG CỤ BOTTOM APP BAR
+        bottomNavigationBar: BottomAppBar(
+          color: Colors.transparent,
+          elevation: 0,
+          child: Row(
+            children: [
+              // Nút Đổi màu
+              IconButton(
+                icon: const Icon(Icons.palette_outlined),
+                tooltip: 'Đổi màu nền',
+                onPressed: () => _showColorPicker(context),
+              ),
+              // Nút Chọn Ảnh từ máy
+              IconButton(
+                icon: const Icon(Icons.image_outlined),
+                tooltip: 'Thêm ảnh',
+                onPressed: _pickImage,
+              ),
+              // Nút Dán Ảnh từ Clipboard
+              IconButton(
+                icon: const Icon(Icons.content_paste),
+                tooltip: 'Dán ảnh (Ctrl+V)',
+                onPressed: _pasteImage,
+              ),
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  // Hàm chọn file ảnh từ máy tính
+  Future<void> _pickImage() async {
+    FilePickerResult? result = await FilePicker.pickFiles(type: FileType.image);
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        _imagePaths.add(result.files.single.path!);
+      });
+    }
+  }
+
+  // Hàm dán ảnh từ bộ nhớ tạm (Clipboard)
+  Future<void> _pasteImage() async {
+    try {
+      final clipboard = SystemClipboard.instance;
+      if (clipboard == null) return;
+      
+      final reader = await clipboard.read();
+
+      // 1. THỬ LẤY ẢNH TRỰC TIẾP (Khi copy ảnh từ web, snipping tool, hoặc file ảnh từ File Explorer)
+      if (reader.canProvide(Formats.png)) {
+        reader.getFile(Formats.png, (file) async {
+          final imageBytes = await file.readAll();
+          final dir = await getApplicationDocumentsDirectory();
+          final targetFile = File('${dir.path}/pasted_image_${DateTime.now().millisecondsSinceEpoch}.png');
+          await targetFile.writeAsBytes(imageBytes);
+          
+          if (mounted) {
+            setState(() { _imagePaths.add(targetFile.path); });
+          }
+        });
+        return;
+      }
+      
+      // 2. THỬ LẤY ẢNH JPEG 
+      if (reader.canProvide(Formats.jpeg)) {
+        reader.getFile(Formats.jpeg, (file) async {
+          final imageBytes = await file.readAll();
+          final dir = await getApplicationDocumentsDirectory();
+          final targetFile = File('${dir.path}/pasted_image_${DateTime.now().millisecondsSinceEpoch}.jpeg');
+          await targetFile.writeAsBytes(imageBytes);
+          
+          if (mounted) {
+            setState(() { _imagePaths.add(targetFile.path); });
+          }
+        });
+        return;
+      }
+
+      // Nếu có lỗi nghiêm trọng thì mới hiện thông báo
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi khi dán ảnh: $e')));
+      }
+    }
   }
 
   // Hàm tạo cái bảng nhỏ trượt từ dưới lên (BottomSheet) để chọn màu

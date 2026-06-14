@@ -4,8 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 // ThemeViewModel: Lớp quản lý trạng thái giao diện (Sáng/Tối/Hệ thống)
 class ThemeViewModel extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
+  bool _isListView = false;
 
   ThemeMode get themeMode => _themeMode;
+  bool get isListView => _isListView;
 
   ThemeViewModel() {
     _loadTheme();
@@ -14,20 +16,11 @@ class ThemeViewModel extends ChangeNotifier {
   // Tải cài đặt giao diện đã lưu từ lần trước
   Future<void> _loadTheme() async {
     final prefs = await SharedPreferences.getInstance();
-    final themeString = prefs.getString('themeMode') ?? 'system';
+    final themeIndex = prefs.getInt('theme_mode') ?? ThemeMode.system.index;
+    _themeMode = ThemeMode.values[themeIndex];
     
-    switch (themeString) {
-      case 'light':
-        _themeMode = ThemeMode.light;
-        break;
-      case 'dark':
-        _themeMode = ThemeMode.dark;
-        break;
-      case 'system':
-      default:
-        _themeMode = ThemeMode.system;
-        break;
-    }
+    _isListView = prefs.getBool('is_list_view') ?? false;
+    
     notifyListeners();
   }
 
@@ -39,10 +32,14 @@ class ThemeViewModel extends ChangeNotifier {
     notifyListeners();
 
     final prefs = await SharedPreferences.getInstance();
-    String themeString = 'system';
-    if (mode == ThemeMode.light) themeString = 'light';
-    if (mode == ThemeMode.dark) themeString = 'dark';
+    await prefs.setInt('theme_mode', mode.index);
+  }
+
+  void toggleViewMode() async {
+    _isListView = !_isListView;
+    notifyListeners();
     
-    await prefs.setString('themeMode', themeString);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_list_view', _isListView);
   }
 }

@@ -1,30 +1,75 @@
 import 'package:flutter/material.dart';
 import 'package:drift/drift.dart' as drift;
+import 'dart:async';
 import '../models/database.dart';
+import '../services/notification_service.dart';
 
 class NotesViewModel extends ChangeNotifier {
   final AppDatabase _db;
   List<Note> _notes = [];
+  String _searchQuery = '';
+  Timer? _reminderTimer;
 
   List<Note> get notes => _notes;
+  String get searchQuery => _searchQuery;
 
   NotesViewModel(this._db) {
+    _loadNotes();
+    _startReminderTimer();
+  }
+
+  void _startReminderTimer() {
+    // Cứ mỗi 30 giây kiểm tra 1 lần xem có báo thức nào tới hạn chưa
+    _reminderTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      final now = DateTime.now();
+      for (var note in _notes) {
+        if (note.reminderAt != null) {
+          // Báo thức được tính là tới hạn nếu giờ hiện tại lớn hơn hoặc bằng giờ báo thức
+          final diff = now.difference(note.reminderAt!);
+          // Kiểm tra diff trong khoảng 0 đến 60 giây để tránh bắn thông báo nhiều lần hoặc bị lỡ
+          if (diff.inSeconds >= 0 && diff.inMinutes < 2) {
+            await NotificationService().showNotification(
+              id: note.id,
+              title: 'Nhắc nhở: ${note.title.isNotEmpty ? note.title : "Ghi chú"}',
+              body: note.content,
+            );
+            // Sau khi thông báo, xóa hẹn giờ đi
+            await setReminder(note.id, null);
+          }
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _reminderTimer?.cancel();
+    super.dispose();
+  }
+
+  // --- HÀM TÌM KIẾM ---
+  void setSearchQuery(String query) {
+    _searchQuery = query;
     _loadNotes();
   }
 
   Future<void> _loadNotes() async {
-    _notes = await (_db.select(_db.notes)
-          // Sắp xếp: Ưu tiên Ghi chú được ghim lên đầu (isPinned DESC: true (1) trước false (0)), 
-          // sau đó sắp xếp theo thứ tự kéo thả (orderIndex ASC)
+    final query = _db.select(_db.notes)
           ..orderBy([
             (t) => drift.OrderingTerm(expression: t.isPinned, mode: drift.OrderingMode.desc),
             (t) => drift.OrderingTerm(expression: t.orderIndex, mode: drift.OrderingMode.asc)
-          ]))
-        .get();
+          ]);
+
+    // Lọc theo từ khóa (LIKE)
+    if (_searchQuery.isNotEmpty) {
+      query.where((t) => t.title.like('%$_searchQuery%') | t.content.like('%$_searchQuery%'));
+    }
+
+    _notes = await query.get();
     notifyListeners();
   }
 
-  Future<void> addNote(String title, String content, int? color) async {
+  Future<void> addNote(String title, String content, int? color, [List<String>? imagePaths]) async {
     final now = DateTime.now();
     
     // Tính toán orderIndex mới (Nối đuôi vào cuối danh sách)
@@ -41,12 +86,13 @@ class NotesViewModel extends ChangeNotifier {
             createdAt: drift.Value(now),
             modifiedAt: drift.Value(now),
             orderIndex: drift.Value(newOrderIndex),
+            imagePaths: drift.Value(imagePaths),
           ),
         );
     await _loadNotes();
   }
 
-  Future<void> updateNote(int id, String title, String content, int? color) async {
+  Future<void> updateNote(int id, String title, String content, int? color, [List<String>? imagePaths]) async {
     final now = DateTime.now();
     await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
       NotesCompanion(
@@ -54,6 +100,7 @@ class NotesViewModel extends ChangeNotifier {
         content: drift.Value(content),
         color: drift.Value(color),
         modifiedAt: drift.Value(now),
+        imagePaths: drift.Value(imagePaths),
       ),
     );
     await _loadNotes();
@@ -135,12 +182,35 @@ class NotesViewModel extends ChangeNotifier {
     await _loadNotes();
   }
 
-  // Lưu đường dẫn hình ảnh
-  Future<void> setImage(int id, String? imagePath) async {
+  // Thêm một hình ảnh vào ghi chú
+  Future<void> addImage(int id, String newImagePath) async {
+    final note = _notes.firstWhere((n) => n.id == id);
+    final List<String> currentImages = note.imagePaths != null ? List<String>.from(note.imagePaths!) : [];
+    currentImages.add(newImagePath);
+    
     final now = DateTime.now();
     await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
       NotesCompanion(
-        imagePath: drift.Value(imagePath),
+        imagePaths: drift.Value(currentImages),
+        modifiedAt: drift.Value(now),
+      ),
+    );
+    await _loadNotes();
+  }
+
+  // Xóa một hình ảnh khỏi ghi chú
+  Future<void> removeImage(int id, String imagePathToRemove) async {
+    final note = _notes.firstWhere((n) => n.id == id);
+    if (note.imagePaths == null) return;
+    
+    final List<String> currentImages = List<String>.from(note.imagePaths!);
+    currentImages.remove(imagePathToRemove);
+    
+    final now = DateTime.now();
+    await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+      NotesCompanion(
+        // Nếu mảng rỗng thì lưu là null để tiết kiệm DB
+        imagePaths: drift.Value(currentImages.isEmpty ? null : currentImages),
         modifiedAt: drift.Value(now),
       ),
     );

@@ -116,17 +116,15 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
-  static const VerificationMeta _imagePathMeta = const VerificationMeta(
-    'imagePath',
-  );
   @override
-  late final GeneratedColumn<String> imagePath = GeneratedColumn<String>(
-    'image_path',
+  late final GeneratedColumnWithTypeConverter<List<String>?, String>
+  imagePaths = GeneratedColumn<String>(
+    'image_paths',
     aliasedName,
     true,
     type: DriftSqlType.string,
     requiredDuringInsert: false,
-  );
+  ).withConverter<List<String>?>($NotesTable.$converterimagePathsn);
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -138,7 +136,7 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     orderIndex,
     isPinned,
     reminderAt,
-    imagePath,
+    imagePaths,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -207,12 +205,6 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         reminderAt.isAcceptableOrUnknown(data['reminder_at']!, _reminderAtMeta),
       );
     }
-    if (data.containsKey('image_path')) {
-      context.handle(
-        _imagePathMeta,
-        imagePath.isAcceptableOrUnknown(data['image_path']!, _imagePathMeta),
-      );
-    }
     return context;
   }
 
@@ -258,9 +250,11 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}reminder_at'],
       ),
-      imagePath: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}image_path'],
+      imagePaths: $NotesTable.$converterimagePathsn.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}image_paths'],
+        ),
       ),
     );
   }
@@ -269,6 +263,11 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
   $NotesTable createAlias(String alias) {
     return $NotesTable(attachedDatabase, alias);
   }
+
+  static TypeConverter<List<String>, String> $converterimagePaths =
+      const StringListConverter();
+  static TypeConverter<List<String>?, String?> $converterimagePathsn =
+      NullAwareTypeConverter.wrap($converterimagePaths);
 }
 
 class Note extends DataClass implements Insertable<Note> {
@@ -281,7 +280,7 @@ class Note extends DataClass implements Insertable<Note> {
   final int orderIndex;
   final bool isPinned;
   final DateTime? reminderAt;
-  final String? imagePath;
+  final List<String>? imagePaths;
   const Note({
     required this.id,
     required this.title,
@@ -292,7 +291,7 @@ class Note extends DataClass implements Insertable<Note> {
     required this.orderIndex,
     required this.isPinned,
     this.reminderAt,
-    this.imagePath,
+    this.imagePaths,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -310,8 +309,10 @@ class Note extends DataClass implements Insertable<Note> {
     if (!nullToAbsent || reminderAt != null) {
       map['reminder_at'] = Variable<DateTime>(reminderAt);
     }
-    if (!nullToAbsent || imagePath != null) {
-      map['image_path'] = Variable<String>(imagePath);
+    if (!nullToAbsent || imagePaths != null) {
+      map['image_paths'] = Variable<String>(
+        $NotesTable.$converterimagePathsn.toSql(imagePaths),
+      );
     }
     return map;
   }
@@ -331,9 +332,9 @@ class Note extends DataClass implements Insertable<Note> {
       reminderAt: reminderAt == null && nullToAbsent
           ? const Value.absent()
           : Value(reminderAt),
-      imagePath: imagePath == null && nullToAbsent
+      imagePaths: imagePaths == null && nullToAbsent
           ? const Value.absent()
-          : Value(imagePath),
+          : Value(imagePaths),
     );
   }
 
@@ -352,7 +353,7 @@ class Note extends DataClass implements Insertable<Note> {
       orderIndex: serializer.fromJson<int>(json['orderIndex']),
       isPinned: serializer.fromJson<bool>(json['isPinned']),
       reminderAt: serializer.fromJson<DateTime?>(json['reminderAt']),
-      imagePath: serializer.fromJson<String?>(json['imagePath']),
+      imagePaths: serializer.fromJson<List<String>?>(json['imagePaths']),
     );
   }
   @override
@@ -368,7 +369,7 @@ class Note extends DataClass implements Insertable<Note> {
       'orderIndex': serializer.toJson<int>(orderIndex),
       'isPinned': serializer.toJson<bool>(isPinned),
       'reminderAt': serializer.toJson<DateTime?>(reminderAt),
-      'imagePath': serializer.toJson<String?>(imagePath),
+      'imagePaths': serializer.toJson<List<String>?>(imagePaths),
     };
   }
 
@@ -382,7 +383,7 @@ class Note extends DataClass implements Insertable<Note> {
     int? orderIndex,
     bool? isPinned,
     Value<DateTime?> reminderAt = const Value.absent(),
-    Value<String?> imagePath = const Value.absent(),
+    Value<List<String>?> imagePaths = const Value.absent(),
   }) => Note(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -393,7 +394,7 @@ class Note extends DataClass implements Insertable<Note> {
     orderIndex: orderIndex ?? this.orderIndex,
     isPinned: isPinned ?? this.isPinned,
     reminderAt: reminderAt.present ? reminderAt.value : this.reminderAt,
-    imagePath: imagePath.present ? imagePath.value : this.imagePath,
+    imagePaths: imagePaths.present ? imagePaths.value : this.imagePaths,
   );
   Note copyWithCompanion(NotesCompanion data) {
     return Note(
@@ -412,7 +413,9 @@ class Note extends DataClass implements Insertable<Note> {
       reminderAt: data.reminderAt.present
           ? data.reminderAt.value
           : this.reminderAt,
-      imagePath: data.imagePath.present ? data.imagePath.value : this.imagePath,
+      imagePaths: data.imagePaths.present
+          ? data.imagePaths.value
+          : this.imagePaths,
     );
   }
 
@@ -428,7 +431,7 @@ class Note extends DataClass implements Insertable<Note> {
           ..write('orderIndex: $orderIndex, ')
           ..write('isPinned: $isPinned, ')
           ..write('reminderAt: $reminderAt, ')
-          ..write('imagePath: $imagePath')
+          ..write('imagePaths: $imagePaths')
           ..write(')'))
         .toString();
   }
@@ -444,7 +447,7 @@ class Note extends DataClass implements Insertable<Note> {
     orderIndex,
     isPinned,
     reminderAt,
-    imagePath,
+    imagePaths,
   );
   @override
   bool operator ==(Object other) =>
@@ -459,7 +462,7 @@ class Note extends DataClass implements Insertable<Note> {
           other.orderIndex == this.orderIndex &&
           other.isPinned == this.isPinned &&
           other.reminderAt == this.reminderAt &&
-          other.imagePath == this.imagePath);
+          other.imagePaths == this.imagePaths);
 }
 
 class NotesCompanion extends UpdateCompanion<Note> {
@@ -472,7 +475,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
   final Value<int> orderIndex;
   final Value<bool> isPinned;
   final Value<DateTime?> reminderAt;
-  final Value<String?> imagePath;
+  final Value<List<String>?> imagePaths;
   const NotesCompanion({
     this.id = const Value.absent(),
     this.title = const Value.absent(),
@@ -483,7 +486,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.orderIndex = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.reminderAt = const Value.absent(),
-    this.imagePath = const Value.absent(),
+    this.imagePaths = const Value.absent(),
   });
   NotesCompanion.insert({
     this.id = const Value.absent(),
@@ -495,7 +498,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.orderIndex = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.reminderAt = const Value.absent(),
-    this.imagePath = const Value.absent(),
+    this.imagePaths = const Value.absent(),
   }) : title = Value(title),
        content = Value(content);
   static Insertable<Note> custom({
@@ -508,7 +511,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Expression<int>? orderIndex,
     Expression<bool>? isPinned,
     Expression<DateTime>? reminderAt,
-    Expression<String>? imagePath,
+    Expression<String>? imagePaths,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -520,7 +523,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
       if (orderIndex != null) 'order_index': orderIndex,
       if (isPinned != null) 'is_pinned': isPinned,
       if (reminderAt != null) 'reminder_at': reminderAt,
-      if (imagePath != null) 'image_path': imagePath,
+      if (imagePaths != null) 'image_paths': imagePaths,
     });
   }
 
@@ -534,7 +537,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Value<int>? orderIndex,
     Value<bool>? isPinned,
     Value<DateTime?>? reminderAt,
-    Value<String?>? imagePath,
+    Value<List<String>?>? imagePaths,
   }) {
     return NotesCompanion(
       id: id ?? this.id,
@@ -546,7 +549,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
       orderIndex: orderIndex ?? this.orderIndex,
       isPinned: isPinned ?? this.isPinned,
       reminderAt: reminderAt ?? this.reminderAt,
-      imagePath: imagePath ?? this.imagePath,
+      imagePaths: imagePaths ?? this.imagePaths,
     );
   }
 
@@ -580,8 +583,10 @@ class NotesCompanion extends UpdateCompanion<Note> {
     if (reminderAt.present) {
       map['reminder_at'] = Variable<DateTime>(reminderAt.value);
     }
-    if (imagePath.present) {
-      map['image_path'] = Variable<String>(imagePath.value);
+    if (imagePaths.present) {
+      map['image_paths'] = Variable<String>(
+        $NotesTable.$converterimagePathsn.toSql(imagePaths.value),
+      );
     }
     return map;
   }
@@ -598,7 +603,7 @@ class NotesCompanion extends UpdateCompanion<Note> {
           ..write('orderIndex: $orderIndex, ')
           ..write('isPinned: $isPinned, ')
           ..write('reminderAt: $reminderAt, ')
-          ..write('imagePath: $imagePath')
+          ..write('imagePaths: $imagePaths')
           ..write(')'))
         .toString();
   }
@@ -626,7 +631,7 @@ typedef $$NotesTableCreateCompanionBuilder =
       Value<int> orderIndex,
       Value<bool> isPinned,
       Value<DateTime?> reminderAt,
-      Value<String?> imagePath,
+      Value<List<String>?> imagePaths,
     });
 typedef $$NotesTableUpdateCompanionBuilder =
     NotesCompanion Function({
@@ -639,7 +644,7 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<int> orderIndex,
       Value<bool> isPinned,
       Value<DateTime?> reminderAt,
-      Value<String?> imagePath,
+      Value<List<String>?> imagePaths,
     });
 
 class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
@@ -695,9 +700,10 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get imagePath => $composableBuilder(
-    column: $table.imagePath,
-    builder: (column) => ColumnFilters(column),
+  ColumnWithTypeConverterFilters<List<String>?, List<String>, String>
+  get imagePaths => $composableBuilder(
+    column: $table.imagePaths,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 }
 
@@ -755,8 +761,8 @@ class $$NotesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get imagePath => $composableBuilder(
-    column: $table.imagePath,
+  ColumnOrderings<String> get imagePaths => $composableBuilder(
+    column: $table.imagePaths,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -803,8 +809,11 @@ class $$NotesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get imagePath =>
-      $composableBuilder(column: $table.imagePath, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<List<String>?, String> get imagePaths =>
+      $composableBuilder(
+        column: $table.imagePaths,
+        builder: (column) => column,
+      );
 }
 
 class $$NotesTableTableManager
@@ -844,7 +853,7 @@ class $$NotesTableTableManager
                 Value<int> orderIndex = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<DateTime?> reminderAt = const Value.absent(),
-                Value<String?> imagePath = const Value.absent(),
+                Value<List<String>?> imagePaths = const Value.absent(),
               }) => NotesCompanion(
                 id: id,
                 title: title,
@@ -855,7 +864,7 @@ class $$NotesTableTableManager
                 orderIndex: orderIndex,
                 isPinned: isPinned,
                 reminderAt: reminderAt,
-                imagePath: imagePath,
+                imagePaths: imagePaths,
               ),
           createCompanionCallback:
               ({
@@ -868,7 +877,7 @@ class $$NotesTableTableManager
                 Value<int> orderIndex = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<DateTime?> reminderAt = const Value.absent(),
-                Value<String?> imagePath = const Value.absent(),
+                Value<List<String>?> imagePaths = const Value.absent(),
               }) => NotesCompanion.insert(
                 id: id,
                 title: title,
@@ -879,7 +888,7 @@ class $$NotesTableTableManager
                 orderIndex: orderIndex,
                 isPinned: isPinned,
                 reminderAt: reminderAt,
-                imagePath: imagePath,
+                imagePaths: imagePaths,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

@@ -6,6 +6,7 @@ import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'package:go_router/go_router.dart';
 import '../view_models/notes_view_model.dart';
 import '../view_models/theme_view_model.dart';
+import '../utils/color_utils.dart';
 import 'package:intl/intl.dart';
 
 // Đổi từ StatelessWidget sang StatefulWidget để có thể quản lý trạng thái của Navigation Drawer
@@ -82,8 +83,11 @@ class _HomeScreenState extends State<HomeScreen> {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const TextField(
-            decoration: InputDecoration(
+          child: TextField(
+            onChanged: (text) {
+              context.read<NotesViewModel>().setSearchQuery(text); // Gửi chữ về ViewModel để lọc
+            },
+            decoration: const InputDecoration(
               hintText: 'Tìm kiếm',
               prefixIcon: Icon(Icons.search),
               border: InputBorder.none, // Xóa gạch chân mặc định của TextField
@@ -101,11 +105,15 @@ class _HomeScreenState extends State<HomeScreen> {
             },
           ),
           // Nút Chế độ xem (List/Grid)
-          IconButton(
-            icon: const Icon(Icons.view_agenda_outlined), // Biểu tượng dạng danh sách (hoặc dùng grid_view)
-            tooltip: 'Chế độ xem danh sách',
-            onPressed: () {
-              // TODO: Tính năng chuyển đổi giữa lưới và danh sách
+          Consumer<ThemeViewModel>(
+            builder: (context, theme, child) {
+              return IconButton(
+                icon: Icon(theme.isListView ? Icons.grid_view : Icons.view_agenda_outlined),
+                tooltip: theme.isListView ? 'Chế độ xem lưới' : 'Chế độ xem danh sách',
+                onPressed: () {
+                  theme.toggleViewMode();
+                },
+              );
             },
           ),
           // Nút Cài đặt (Mở cửa sổ Cài đặt tổng hợp)
@@ -208,117 +216,169 @@ class _HomeScreenState extends State<HomeScreen> {
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            int crossAxisCount = 2;
-            if (constraints.maxWidth >= 900) {
-              crossAxisCount = 5;
-            } else if (constraints.maxWidth >= 600) {
-              crossAxisCount = 3;
-            }
+            final isListView = context.watch<ThemeViewModel>().isListView;
 
-            return ReorderableGridView.builder(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: crossAxisCount,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.0,
-              ),
-              padding: const EdgeInsets.all(16),
-              itemCount: viewModel.notes.length,
-              onReorder: (oldIndex, newIndex) {
-                viewModel.reorderNotes(oldIndex, newIndex);
-              },
-              itemBuilder: (context, index) {
-                final note = viewModel.notes[index];
-                final color = note.color != null ? Color(note.color!) : Theme.of(context).cardColor;
-                
-                return Card(
-                  key: ValueKey(note.id),
-                  color: color,
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 1),
+            // Hàm phụ để render ảnh
+            Widget buildImageGallery(List<String> imagePaths) {
+              Widget buildSingleImage(String path, {double? height}) {
+                return SizedBox(
+                  width: double.infinity,
+                  height: height,
+                  child: Image.file(
+                    File(path),
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    errorBuilder: (context, error, stackTrace) =>
+                        SizedBox(height: height ?? 100, child: const Center(child: Icon(Icons.broken_image))),
                   ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      context.push('/note?id=${note.id}');
-                    },
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // --- 1. HIỂN THỊ HÌNH ẢNH NẾU CÓ ---
-                        if (note.imagePath != null && note.imagePath!.isNotEmpty)
-                          Flexible( // Dùng Flexible thay vì set cứng chiều cao 120 để tránh vỡ layout ở màn hình nhỏ
-                            flex: 3,
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: ClipRRect(
-                                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                                child: Image.file(
-                                  File(note.imagePath!),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const SizedBox(height: 40, child: Center(child: Icon(Icons.broken_image))),
-                                ),
-                              ),
-                            ),
-                          ),
-                        
-                        // --- 2. NỘI DUNG CHÍNH (TIÊU ĐỀ, TEXT) ---
-                        Expanded(
-                          flex: 5,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Hàng Tiêu đề và Nút Ghim
-                                Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        note.title.isNotEmpty ? note.title : '',
-                                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                    // Nút Ghim (Pin)
-                                    IconButton(
-                                      constraints: const BoxConstraints(),
-                                      padding: EdgeInsets.zero,
-                                      icon: Icon(
-                                        note.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                                        color: note.isPinned ? Theme.of(context).colorScheme.primary : null,
-                                        size: 20,
-                                      ),
-                                      onPressed: () {
-                                        viewModel.togglePin(note.id, note.isPinned);
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4), // Thu nhỏ khoảng cách lại
+                );
+              }
 
-                                // Nội dung văn bản
-                                if (note.content.isNotEmpty)
-                                  Flexible( // Đổi từ Expanded thành Flexible để không bị vỡ giao diện nếu hết chỗ
-                                    child: Text(
-                                      note.content,
-                                      style: Theme.of(context).textTheme.bodyMedium,
-                                      maxLines: note.imagePath != null ? 2 : 4, // Có ảnh thì thu bớt chữ
-                                      overflow: TextOverflow.ellipsis,
+              if (imagePaths.length == 1) {
+                return ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: isListView ? 300 : 120),
+                  child: buildSingleImage(imagePaths[0]),
+                );
+              } else if (imagePaths.length == 2) {
+                double h = isListView ? 150 : 100;
+                return SizedBox(
+                  height: h,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: buildSingleImage(imagePaths[0], height: h)),
+                      const SizedBox(width: 2),
+                      Expanded(child: buildSingleImage(imagePaths[1], height: h)),
+                    ],
+                  ),
+                );
+              } else {
+                double topH = isListView ? 150 : 80;
+                double botH = isListView ? 100 : 60;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    buildSingleImage(imagePaths[0], height: topH),
+                    const SizedBox(height: 2),
+                    SizedBox(
+                      height: botH,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(child: buildSingleImage(imagePaths[1], height: botH)),
+                          const SizedBox(width: 2),
+                          Expanded(
+                            child: Stack(
+                              fit: StackFit.passthrough,
+                              children: [
+                                buildSingleImage(imagePaths[2], height: botH),
+                                if (imagePaths.length > 3)
+                                  Positioned.fill(
+                                    child: Container(
+                                      color: Colors.black54,
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        '+${imagePaths.length - 3}',
+                                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                                      ),
                                     ),
                                   ),
-                                
-                                // Hiển thị thời gian hẹn nhắc nhở
-                                if (note.reminderAt != null)
-                                  Flexible( // Bọc Flexible cho an toàn
-                                    child: Container(
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+            }
+
+            // Widget tạo ra 1 thẻ Ghi chú hoàn chỉnh, tự động co giãn theo nội dung
+            Widget buildNoteCard(int index) {
+              final note = viewModel.notes[index];
+              final color = ColorUtils.getAdaptiveColor(context, note.color);
+
+              return Card(
+                key: ValueKey(note.id),
+                color: color,
+                elevation: 1,
+                margin: EdgeInsets.only(bottom: isListView ? 12 : 0), // Nếu là List thì thêm khoảng cách dưới
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 1),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    context.push('/note?id=${note.id}');
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min, // QUAN TRỌNG: Ôm sát nội dung, không bị kéo dãn cứng ngắc
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // --- 1. HIỂN THỊ HÌNH ẢNH NẾU CÓ ---
+                      if (note.imagePaths != null && note.imagePaths!.isNotEmpty)
+                        ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                          child: buildImageGallery(note.imagePaths!),
+                        ),
+
+                      // --- 2. NỘI DUNG CHÍNH (TIÊU ĐỀ, TEXT) ---
+                      // Dùng Flexible kết hợp với ClipRect để ngăn chữ tràn ra ngoài giới hạn của thẻ (gây lỗi Overflow)
+                      Flexible(
+                        fit: isListView ? FlexFit.loose : FlexFit.tight,
+                        child: ClipRect(
+                          child: SingleChildScrollView(
+                            physics: const NeverScrollableScrollPhysics(), // Không cho cuộn, chỉ dùng để cắt phần thừa
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Hàng Tiêu đề và Nút Ghim
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          note.title.isNotEmpty ? note.title : '',
+                                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      // Nút Ghim (Pin)
+                                      IconButton(
+                                        constraints: const BoxConstraints(),
+                                        padding: EdgeInsets.zero,
+                                        icon: Icon(
+                                          note.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                                          color: note.isPinned ? Theme.of(context).colorScheme.primary : null,
+                                          size: 20,
+                                        ),
+                                        onPressed: () {
+                                          viewModel.togglePin(note.id, note.isPinned);
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+
+                                  // Nội dung văn bản
+                                  if (note.content.isNotEmpty)
+                                    Text(
+                                      note.content,
+                                      style: Theme.of(context).textTheme.bodyMedium,
+                                      maxLines: (note.imagePaths != null && note.imagePaths!.isNotEmpty) ? 3 : 15, // Tăng maxLines vì đã có Flexible cắt bớt
+                                      overflow: TextOverflow.fade, // Đổi sang fade để mờ đi nếu bị cắt
+                                    ),
+
+                                  // Hiển thị thời gian hẹn nhắc nhở
+                                  if (note.reminderAt != null)
+                                    Container(
                                       margin: const EdgeInsets.only(top: 8),
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
@@ -337,81 +397,112 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ],
                                       ),
                                     ),
-                                  ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
+                      ),
 
-                        // --- 3. THANH CÔNG CỤ DƯỚI CÙNG ---
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              // Nút Nhắc nhở
-                              IconButton(
-                                icon: const Icon(Icons.add_alert_outlined, size: 18),
-                                tooltip: 'Nhắc tôi',
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.all(6),
-                                onPressed: () async {
-                                  // Hiển thị Popup chọn ngày
-                                  final date = await showDatePicker(
+                      // --- 3. THANH CÔNG CỤ DƯỚI CÙNG ---
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.add_alert_outlined, size: 18),
+                              tooltip: 'Nhắc tôi',
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.all(6),
+                              onPressed: () async {
+                                final date = await showDatePicker(
+                                  context: context,
+                                  initialDate: DateTime.now().add(const Duration(days: 1)),
+                                  firstDate: DateTime.now(),
+                                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                                );
+                                if (date != null && context.mounted) {
+                                  final time = await showTimePicker(
                                     context: context,
-                                    initialDate: DateTime.now().add(const Duration(days: 1)),
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now().add(const Duration(days: 365)),
+                                    initialTime: const TimeOfDay(hour: 8, minute: 0),
                                   );
-                                  if (date != null && context.mounted) {
-                                    // Hiển thị Popup chọn giờ
-                                    final time = await showTimePicker(
-                                      context: context,
-                                      initialTime: const TimeOfDay(hour: 8, minute: 0),
-                                    );
-                                    if (time != null) {
-                                      final reminder = DateTime(date.year, date.month, date.day, time.hour, time.minute);
-                                      viewModel.setReminder(note.id, reminder);
-                                    }
+                                  if (time != null) {
+                                    final reminder = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+                                    viewModel.setReminder(note.id, reminder);
                                   }
-                                },
-                              ),
-                              // Nút Đổi Màu
-                              IconButton(
-                                icon: const Icon(Icons.palette_outlined, size: 18),
-                                tooltip: 'Đổi màu ghi chú',
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.all(6),
-                                onPressed: () {
-                                  // Hiển thị Popup chọn màu sắc giống như trang Note Editor
-                                  _showColorPicker(context, note.id, note.color, viewModel);
-                                },
-                              ),
-                              // Nút Thêm Hình Ảnh
-                              IconButton(
-                                icon: const Icon(Icons.image_outlined, size: 18),
-                                tooltip: 'Thêm hình ảnh',
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.all(6),
-                                onPressed: () async {
-                                  // Mở hộp thoại chọn file của hệ thống máy tính
-                                  FilePickerResult? result = await FilePicker.pickFiles(
-                                    type: FileType.image,
-                                  );
-                                  if (result != null && result.files.single.path != null) {
-                                    viewModel.setImage(note.id, result.files.single.path);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.palette_outlined, size: 18),
+                              tooltip: 'Đổi màu ghi chú',
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.all(6),
+                              onPressed: () {
+                                _showColorPicker(context, note.id, note.color, viewModel);
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.image_outlined, size: 18),
+                              tooltip: 'Thêm hình ảnh',
+                              constraints: const BoxConstraints(),
+                              padding: const EdgeInsets.all(6),
+                              onPressed: () async {
+                                FilePickerResult? result = await FilePicker.pickFiles(type: FileType.image);
+                                if (result != null && result.files.single.path != null) {
+                                  viewModel.addImage(note.id, result.files.single.path!);
+                                }
+                              },
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            if (isListView) {
+              // GIAO DIỆN DANH SÁCH (1 cột) dùng ReorderableListView để hỗ trợ kéo thả
+              return ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 600), // Giới hạn độ rộng danh sách cho đẹp
+                child: Center(
+                  child: SizedBox(
+                    width: constraints.maxWidth > 600 ? 600 : constraints.maxWidth,
+                    child: ReorderableListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: viewModel.notes.length,
+                      onReorder: (oldIndex, newIndex) {
+                        viewModel.reorderNotes(oldIndex, newIndex);
+                      },
+                      itemBuilder: (context, index) {
+                        return buildNoteCard(index);
+                      },
                     ),
                   ),
-                );
-              },
-            );
+                ),
+              );
+            } else {
+              // Tự động tính số cột sao cho mỗi thẻ rộng không quá 280px
+              int crossAxisCount = (constraints.maxWidth / 280).ceil();
+              if (crossAxisCount < 2) crossAxisCount = 2; // Ít nhất 2 cột
+
+              return ReorderableGridView.count(
+                padding: const EdgeInsets.all(16),
+                crossAxisCount: crossAxisCount,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.85, // Tỷ lệ thẻ
+                onReorder: (oldIndex, newIndex) {
+                  viewModel.reorderNotes(oldIndex, newIndex);
+                },
+                children: List.generate(viewModel.notes.length, (index) {
+                  return buildNoteCard(index);
+                }),
+              );
+            }
           },
         );
       },
@@ -456,7 +547,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 60, height: 60,
                   margin: const EdgeInsets.symmetric(horizontal: 8),
                   decoration: BoxDecoration(
-                    color: isTransparent ? Theme.of(context).scaffoldBackgroundColor : color,
+                    color: isTransparent ? Theme.of(context).scaffoldBackgroundColor : ColorUtils.getAdaptiveColor(context, colorValue),
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: currentColor == colorValue
