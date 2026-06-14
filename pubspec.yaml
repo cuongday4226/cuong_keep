@@ -44,6 +44,8 @@ dependencies:
   path: ^1.9.1
   intl: ^0.20.2
   reorderable_grid_view: ^2.2.8
+  shared_preferences: ^2.5.5
+  file_picker: ^11.0.2
 
 dev_dependencies:
   flutter_test:

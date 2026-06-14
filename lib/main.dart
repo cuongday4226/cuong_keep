@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'models/database.dart';
 import 'view_models/notes_view_model.dart';
+import 'view_models/theme_view_model.dart';
 import 'routes/app_router.dart';
 
 // Đây là hàm main() - Điểm xuất phát của toàn bộ ứng dụng Flutter. Ứng dụng luôn chạy từ hàm này đầu tiên.
@@ -23,6 +24,10 @@ void main() {
         ChangeNotifierProvider(
           create: (_) => NotesViewModel(db),
         ),
+        // ChangeNotifierProvider cho ThemeViewModel để quản lý đổi giao diện sáng tối
+        ChangeNotifierProvider(
+          create: (_) => ThemeViewModel(),
+        ),
       ],
       // MyApp là phần giao diện gốc rễ của app
       child: const MyApp(),
@@ -36,34 +41,39 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // MaterialApp.router: Là một chuẩn ứng dụng Material Design, dùng .router để hỗ trợ sử dụng hệ thống GoRouter
-    return MaterialApp.router(
-      title: 'Cuong Keep', // Tên ứng dụng
-      
-      // Cấu hình Theme (Giao diện màu sáng)
-      theme: ThemeData(
-        // ColorScheme.fromSeed giúp tạo ra toàn bộ bảng màu chuẩn dựa trên một màu chủ đạo (seedColor), ở đây là xanh mòng két (teal)
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true, // Kích hoạt bộ quy chuẩn thiết kế mới nhất của Google (Material Design 3)
-      ),
-      
-      // Cấu hình Theme (Giao diện chế độ tối - Dark Mode)
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      
-      // ThemeMode.system: Tự động đổi sáng/tối theo cài đặt của hệ điều hành Windows
-      themeMode: ThemeMode.system,
-      
-      // routerConfig: Tiêm cấu hình các đường dẫn màn hình (từ file app_router.dart) vào ứng dụng
-      routerConfig: appRouter,
+    // Dùng Consumer để lắng nghe sự thay đổi của ThemeViewModel
+    return Consumer<ThemeViewModel>(
+      builder: (context, themeViewModel, child) {
+        // MaterialApp.router: Là một chuẩn ứng dụng Material Design, dùng .router để hỗ trợ sử dụng hệ thống GoRouter
+        return MaterialApp.router(
+          title: 'Cuong Keep', // Tên ứng dụng
+          
+          // Cấu hình Theme (Giao diện màu sáng)
+          theme: ThemeData(
+            // ColorScheme.fromSeed giúp tạo ra toàn bộ bảng màu chuẩn dựa trên một màu chủ đạo (seedColor), ở đây là xanh mòng két (teal)
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.teal,
+              brightness: Brightness.light,
+            ),
+            useMaterial3: true, // Kích hoạt bộ quy chuẩn thiết kế mới nhất của Google (Material Design 3)
+          ),
+          
+          // Cấu hình Theme (Giao diện chế độ tối - Dark Mode)
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.teal,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+          
+          // ThemeMode: Lấy cấu hình từ ThemeViewModel (Sáng/Tối/Hệ thống)
+          themeMode: themeViewModel.themeMode,
+          
+          // routerConfig: Tiêm cấu hình các đường dẫn màn hình (từ file app_router.dart) vào ứng dụng
+          routerConfig: appRouter,
+        );
+      },
     );
   }
 }

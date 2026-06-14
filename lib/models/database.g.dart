@@ -90,6 +90,43 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _isPinnedMeta = const VerificationMeta(
+    'isPinned',
+  );
+  @override
+  late final GeneratedColumn<bool> isPinned = GeneratedColumn<bool>(
+    'is_pinned',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_pinned" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _reminderAtMeta = const VerificationMeta(
+    'reminderAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> reminderAt = GeneratedColumn<DateTime>(
+    'reminder_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _imagePathMeta = const VerificationMeta(
+    'imagePath',
+  );
+  @override
+  late final GeneratedColumn<String> imagePath = GeneratedColumn<String>(
+    'image_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -99,6 +136,9 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     createdAt,
     modifiedAt,
     orderIndex,
+    isPinned,
+    reminderAt,
+    imagePath,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -155,6 +195,24 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
       );
     }
+    if (data.containsKey('is_pinned')) {
+      context.handle(
+        _isPinnedMeta,
+        isPinned.isAcceptableOrUnknown(data['is_pinned']!, _isPinnedMeta),
+      );
+    }
+    if (data.containsKey('reminder_at')) {
+      context.handle(
+        _reminderAtMeta,
+        reminderAt.isAcceptableOrUnknown(data['reminder_at']!, _reminderAtMeta),
+      );
+    }
+    if (data.containsKey('image_path')) {
+      context.handle(
+        _imagePathMeta,
+        imagePath.isAcceptableOrUnknown(data['image_path']!, _imagePathMeta),
+      );
+    }
     return context;
   }
 
@@ -192,6 +250,18 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         DriftSqlType.int,
         data['${effectivePrefix}order_index'],
       )!,
+      isPinned: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_pinned'],
+      )!,
+      reminderAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}reminder_at'],
+      ),
+      imagePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}image_path'],
+      ),
     );
   }
 
@@ -209,6 +279,9 @@ class Note extends DataClass implements Insertable<Note> {
   final DateTime createdAt;
   final DateTime modifiedAt;
   final int orderIndex;
+  final bool isPinned;
+  final DateTime? reminderAt;
+  final String? imagePath;
   const Note({
     required this.id,
     required this.title,
@@ -217,6 +290,9 @@ class Note extends DataClass implements Insertable<Note> {
     required this.createdAt,
     required this.modifiedAt,
     required this.orderIndex,
+    required this.isPinned,
+    this.reminderAt,
+    this.imagePath,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -230,6 +306,13 @@ class Note extends DataClass implements Insertable<Note> {
     map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
     map['order_index'] = Variable<int>(orderIndex);
+    map['is_pinned'] = Variable<bool>(isPinned);
+    if (!nullToAbsent || reminderAt != null) {
+      map['reminder_at'] = Variable<DateTime>(reminderAt);
+    }
+    if (!nullToAbsent || imagePath != null) {
+      map['image_path'] = Variable<String>(imagePath);
+    }
     return map;
   }
 
@@ -244,6 +327,13 @@ class Note extends DataClass implements Insertable<Note> {
       createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
       orderIndex: Value(orderIndex),
+      isPinned: Value(isPinned),
+      reminderAt: reminderAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reminderAt),
+      imagePath: imagePath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(imagePath),
     );
   }
 
@@ -260,6 +350,9 @@ class Note extends DataClass implements Insertable<Note> {
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
       orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      isPinned: serializer.fromJson<bool>(json['isPinned']),
+      reminderAt: serializer.fromJson<DateTime?>(json['reminderAt']),
+      imagePath: serializer.fromJson<String?>(json['imagePath']),
     );
   }
   @override
@@ -273,6 +366,9 @@ class Note extends DataClass implements Insertable<Note> {
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
       'orderIndex': serializer.toJson<int>(orderIndex),
+      'isPinned': serializer.toJson<bool>(isPinned),
+      'reminderAt': serializer.toJson<DateTime?>(reminderAt),
+      'imagePath': serializer.toJson<String?>(imagePath),
     };
   }
 
@@ -284,6 +380,9 @@ class Note extends DataClass implements Insertable<Note> {
     DateTime? createdAt,
     DateTime? modifiedAt,
     int? orderIndex,
+    bool? isPinned,
+    Value<DateTime?> reminderAt = const Value.absent(),
+    Value<String?> imagePath = const Value.absent(),
   }) => Note(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -292,6 +391,9 @@ class Note extends DataClass implements Insertable<Note> {
     createdAt: createdAt ?? this.createdAt,
     modifiedAt: modifiedAt ?? this.modifiedAt,
     orderIndex: orderIndex ?? this.orderIndex,
+    isPinned: isPinned ?? this.isPinned,
+    reminderAt: reminderAt.present ? reminderAt.value : this.reminderAt,
+    imagePath: imagePath.present ? imagePath.value : this.imagePath,
   );
   Note copyWithCompanion(NotesCompanion data) {
     return Note(
@@ -306,6 +408,11 @@ class Note extends DataClass implements Insertable<Note> {
       orderIndex: data.orderIndex.present
           ? data.orderIndex.value
           : this.orderIndex,
+      isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
+      reminderAt: data.reminderAt.present
+          ? data.reminderAt.value
+          : this.reminderAt,
+      imagePath: data.imagePath.present ? data.imagePath.value : this.imagePath,
     );
   }
 
@@ -318,14 +425,27 @@ class Note extends DataClass implements Insertable<Note> {
           ..write('color: $color, ')
           ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
-          ..write('orderIndex: $orderIndex')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('isPinned: $isPinned, ')
+          ..write('reminderAt: $reminderAt, ')
+          ..write('imagePath: $imagePath')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, title, content, color, createdAt, modifiedAt, orderIndex);
+  int get hashCode => Object.hash(
+    id,
+    title,
+    content,
+    color,
+    createdAt,
+    modifiedAt,
+    orderIndex,
+    isPinned,
+    reminderAt,
+    imagePath,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -336,7 +456,10 @@ class Note extends DataClass implements Insertable<Note> {
           other.color == this.color &&
           other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
-          other.orderIndex == this.orderIndex);
+          other.orderIndex == this.orderIndex &&
+          other.isPinned == this.isPinned &&
+          other.reminderAt == this.reminderAt &&
+          other.imagePath == this.imagePath);
 }
 
 class NotesCompanion extends UpdateCompanion<Note> {
@@ -347,6 +470,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
   final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
   final Value<int> orderIndex;
+  final Value<bool> isPinned;
+  final Value<DateTime?> reminderAt;
+  final Value<String?> imagePath;
   const NotesCompanion({
     this.id = const Value.absent(),
     this.title = const Value.absent(),
@@ -355,6 +481,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.orderIndex = const Value.absent(),
+    this.isPinned = const Value.absent(),
+    this.reminderAt = const Value.absent(),
+    this.imagePath = const Value.absent(),
   });
   NotesCompanion.insert({
     this.id = const Value.absent(),
@@ -364,6 +493,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
     this.orderIndex = const Value.absent(),
+    this.isPinned = const Value.absent(),
+    this.reminderAt = const Value.absent(),
+    this.imagePath = const Value.absent(),
   }) : title = Value(title),
        content = Value(content);
   static Insertable<Note> custom({
@@ -374,6 +506,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
     Expression<int>? orderIndex,
+    Expression<bool>? isPinned,
+    Expression<DateTime>? reminderAt,
+    Expression<String>? imagePath,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -383,6 +518,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
       if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (orderIndex != null) 'order_index': orderIndex,
+      if (isPinned != null) 'is_pinned': isPinned,
+      if (reminderAt != null) 'reminder_at': reminderAt,
+      if (imagePath != null) 'image_path': imagePath,
     });
   }
 
@@ -394,6 +532,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Value<DateTime>? createdAt,
     Value<DateTime>? modifiedAt,
     Value<int>? orderIndex,
+    Value<bool>? isPinned,
+    Value<DateTime?>? reminderAt,
+    Value<String?>? imagePath,
   }) {
     return NotesCompanion(
       id: id ?? this.id,
@@ -403,6 +544,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
       createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
       orderIndex: orderIndex ?? this.orderIndex,
+      isPinned: isPinned ?? this.isPinned,
+      reminderAt: reminderAt ?? this.reminderAt,
+      imagePath: imagePath ?? this.imagePath,
     );
   }
 
@@ -430,6 +574,15 @@ class NotesCompanion extends UpdateCompanion<Note> {
     if (orderIndex.present) {
       map['order_index'] = Variable<int>(orderIndex.value);
     }
+    if (isPinned.present) {
+      map['is_pinned'] = Variable<bool>(isPinned.value);
+    }
+    if (reminderAt.present) {
+      map['reminder_at'] = Variable<DateTime>(reminderAt.value);
+    }
+    if (imagePath.present) {
+      map['image_path'] = Variable<String>(imagePath.value);
+    }
     return map;
   }
 
@@ -442,7 +595,10 @@ class NotesCompanion extends UpdateCompanion<Note> {
           ..write('color: $color, ')
           ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
-          ..write('orderIndex: $orderIndex')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('isPinned: $isPinned, ')
+          ..write('reminderAt: $reminderAt, ')
+          ..write('imagePath: $imagePath')
           ..write(')'))
         .toString();
   }
@@ -468,6 +624,9 @@ typedef $$NotesTableCreateCompanionBuilder =
       Value<DateTime> createdAt,
       Value<DateTime> modifiedAt,
       Value<int> orderIndex,
+      Value<bool> isPinned,
+      Value<DateTime?> reminderAt,
+      Value<String?> imagePath,
     });
 typedef $$NotesTableUpdateCompanionBuilder =
     NotesCompanion Function({
@@ -478,6 +637,9 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<DateTime> createdAt,
       Value<DateTime> modifiedAt,
       Value<int> orderIndex,
+      Value<bool> isPinned,
+      Value<DateTime?> reminderAt,
+      Value<String?> imagePath,
     });
 
 class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
@@ -520,6 +682,21 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
 
   ColumnFilters<int> get orderIndex => $composableBuilder(
     column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isPinned => $composableBuilder(
+    column: $table.isPinned,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get reminderAt => $composableBuilder(
+    column: $table.reminderAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get imagePath => $composableBuilder(
+    column: $table.imagePath,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -567,6 +744,21 @@ class $$NotesTableOrderingComposer
     column: $table.orderIndex,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isPinned => $composableBuilder(
+    column: $table.isPinned,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get reminderAt => $composableBuilder(
+    column: $table.reminderAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get imagePath => $composableBuilder(
+    column: $table.imagePath,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$NotesTableAnnotationComposer
@@ -602,6 +794,17 @@ class $$NotesTableAnnotationComposer
     column: $table.orderIndex,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get isPinned =>
+      $composableBuilder(column: $table.isPinned, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get reminderAt => $composableBuilder(
+    column: $table.reminderAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get imagePath =>
+      $composableBuilder(column: $table.imagePath, builder: (column) => column);
 }
 
 class $$NotesTableTableManager
@@ -639,6 +842,9 @@ class $$NotesTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> modifiedAt = const Value.absent(),
                 Value<int> orderIndex = const Value.absent(),
+                Value<bool> isPinned = const Value.absent(),
+                Value<DateTime?> reminderAt = const Value.absent(),
+                Value<String?> imagePath = const Value.absent(),
               }) => NotesCompanion(
                 id: id,
                 title: title,
@@ -647,6 +853,9 @@ class $$NotesTableTableManager
                 createdAt: createdAt,
                 modifiedAt: modifiedAt,
                 orderIndex: orderIndex,
+                isPinned: isPinned,
+                reminderAt: reminderAt,
+                imagePath: imagePath,
               ),
           createCompanionCallback:
               ({
@@ -657,6 +866,9 @@ class $$NotesTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> modifiedAt = const Value.absent(),
                 Value<int> orderIndex = const Value.absent(),
+                Value<bool> isPinned = const Value.absent(),
+                Value<DateTime?> reminderAt = const Value.absent(),
+                Value<String?> imagePath = const Value.absent(),
               }) => NotesCompanion.insert(
                 id: id,
                 title: title,
@@ -665,6 +877,9 @@ class $$NotesTableTableManager
                 createdAt: createdAt,
                 modifiedAt: modifiedAt,
                 orderIndex: orderIndex,
+                isPinned: isPinned,
+                reminderAt: reminderAt,
+                imagePath: imagePath,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

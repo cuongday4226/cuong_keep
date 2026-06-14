@@ -14,8 +14,12 @@ class NotesViewModel extends ChangeNotifier {
 
   Future<void> _loadNotes() async {
     _notes = await (_db.select(_db.notes)
-          // Sắp xếp ghi chú theo orderIndex thay vì thời gian sửa (để hỗ trợ tính năng kéo thả)
-          ..orderBy([(t) => drift.OrderingTerm(expression: t.orderIndex, mode: drift.OrderingMode.asc)]))
+          // Sắp xếp: Ưu tiên Ghi chú được ghim lên đầu (isPinned DESC: true (1) trước false (0)), 
+          // sau đó sắp xếp theo thứ tự kéo thả (orderIndex ASC)
+          ..orderBy([
+            (t) => drift.OrderingTerm(expression: t.isPinned, mode: drift.OrderingMode.desc),
+            (t) => drift.OrderingTerm(expression: t.orderIndex, mode: drift.OrderingMode.asc)
+          ]))
         .get();
     notifyListeners();
   }
@@ -91,5 +95,55 @@ class NotesViewModel extends ChangeNotifier {
         _notes[i] = _notes[i].copyWith(orderIndex: i);
       }
     }
+  }
+
+  // --- CÁC HÀM TÍNH NĂNG MỚI ---
+
+  // Bật/tắt ghim
+  Future<void> togglePin(int id, bool currentPinState) async {
+    final now = DateTime.now();
+    await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+      NotesCompanion(
+        isPinned: drift.Value(!currentPinState),
+        modifiedAt: drift.Value(now),
+      ),
+    );
+    await _loadNotes();
+  }
+
+  // Cập nhật màu sắc nhanh
+  Future<void> updateColor(int id, int? color) async {
+    final now = DateTime.now();
+    await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+      NotesCompanion(
+        color: drift.Value(color),
+        modifiedAt: drift.Value(now),
+      ),
+    );
+    await _loadNotes();
+  }
+
+  // Hẹn giờ nhắc nhở
+  Future<void> setReminder(int id, DateTime? reminderTime) async {
+    final now = DateTime.now();
+    await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+      NotesCompanion(
+        reminderAt: drift.Value(reminderTime),
+        modifiedAt: drift.Value(now),
+      ),
+    );
+    await _loadNotes();
+  }
+
+  // Lưu đường dẫn hình ảnh
+  Future<void> setImage(int id, String? imagePath) async {
+    final now = DateTime.now();
+    await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+      NotesCompanion(
+        imagePath: drift.Value(imagePath),
+        modifiedAt: drift.Value(now),
+      ),
+    );
+    await _loadNotes();
   }
 }
