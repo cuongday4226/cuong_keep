@@ -125,6 +125,30 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   ).withConverter<List<String>?>($NotesTable.$converterimagePathsn);
+  static const VerificationMeta _isChecklistMeta = const VerificationMeta(
+    'isChecklist',
+  );
+  @override
+  late final GeneratedColumn<bool> isChecklist = GeneratedColumn<bool>(
+    'is_checklist',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_checklist" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<List<ChecklistItem>?, String>
+  checklistItems = GeneratedColumn<String>(
+    'checklist_items',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  ).withConverter<List<ChecklistItem>?>($NotesTable.$converterchecklistItemsn);
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -137,6 +161,8 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     isPinned,
     reminderAt,
     imagePaths,
+    isChecklist,
+    checklistItems,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -205,6 +231,15 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         reminderAt.isAcceptableOrUnknown(data['reminder_at']!, _reminderAtMeta),
       );
     }
+    if (data.containsKey('is_checklist')) {
+      context.handle(
+        _isChecklistMeta,
+        isChecklist.isAcceptableOrUnknown(
+          data['is_checklist']!,
+          _isChecklistMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -256,6 +291,16 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
           data['${effectivePrefix}image_paths'],
         ),
       ),
+      isChecklist: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_checklist'],
+      )!,
+      checklistItems: $NotesTable.$converterchecklistItemsn.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}checklist_items'],
+        ),
+      ),
     );
   }
 
@@ -268,6 +313,12 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
       const StringListConverter();
   static TypeConverter<List<String>?, String?> $converterimagePathsn =
       NullAwareTypeConverter.wrap($converterimagePaths);
+  static TypeConverter<List<ChecklistItem>, String> $converterchecklistItems =
+      const ChecklistConverter();
+  static TypeConverter<List<ChecklistItem>?, String?>
+  $converterchecklistItemsn = NullAwareTypeConverter.wrap(
+    $converterchecklistItems,
+  );
 }
 
 class Note extends DataClass implements Insertable<Note> {
@@ -281,6 +332,8 @@ class Note extends DataClass implements Insertable<Note> {
   final bool isPinned;
   final DateTime? reminderAt;
   final List<String>? imagePaths;
+  final bool isChecklist;
+  final List<ChecklistItem>? checklistItems;
   const Note({
     required this.id,
     required this.title,
@@ -292,6 +345,8 @@ class Note extends DataClass implements Insertable<Note> {
     required this.isPinned,
     this.reminderAt,
     this.imagePaths,
+    required this.isChecklist,
+    this.checklistItems,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -312,6 +367,12 @@ class Note extends DataClass implements Insertable<Note> {
     if (!nullToAbsent || imagePaths != null) {
       map['image_paths'] = Variable<String>(
         $NotesTable.$converterimagePathsn.toSql(imagePaths),
+      );
+    }
+    map['is_checklist'] = Variable<bool>(isChecklist);
+    if (!nullToAbsent || checklistItems != null) {
+      map['checklist_items'] = Variable<String>(
+        $NotesTable.$converterchecklistItemsn.toSql(checklistItems),
       );
     }
     return map;
@@ -335,6 +396,10 @@ class Note extends DataClass implements Insertable<Note> {
       imagePaths: imagePaths == null && nullToAbsent
           ? const Value.absent()
           : Value(imagePaths),
+      isChecklist: Value(isChecklist),
+      checklistItems: checklistItems == null && nullToAbsent
+          ? const Value.absent()
+          : Value(checklistItems),
     );
   }
 
@@ -354,6 +419,10 @@ class Note extends DataClass implements Insertable<Note> {
       isPinned: serializer.fromJson<bool>(json['isPinned']),
       reminderAt: serializer.fromJson<DateTime?>(json['reminderAt']),
       imagePaths: serializer.fromJson<List<String>?>(json['imagePaths']),
+      isChecklist: serializer.fromJson<bool>(json['isChecklist']),
+      checklistItems: serializer.fromJson<List<ChecklistItem>?>(
+        json['checklistItems'],
+      ),
     );
   }
   @override
@@ -370,6 +439,8 @@ class Note extends DataClass implements Insertable<Note> {
       'isPinned': serializer.toJson<bool>(isPinned),
       'reminderAt': serializer.toJson<DateTime?>(reminderAt),
       'imagePaths': serializer.toJson<List<String>?>(imagePaths),
+      'isChecklist': serializer.toJson<bool>(isChecklist),
+      'checklistItems': serializer.toJson<List<ChecklistItem>?>(checklistItems),
     };
   }
 
@@ -384,6 +455,8 @@ class Note extends DataClass implements Insertable<Note> {
     bool? isPinned,
     Value<DateTime?> reminderAt = const Value.absent(),
     Value<List<String>?> imagePaths = const Value.absent(),
+    bool? isChecklist,
+    Value<List<ChecklistItem>?> checklistItems = const Value.absent(),
   }) => Note(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -395,6 +468,10 @@ class Note extends DataClass implements Insertable<Note> {
     isPinned: isPinned ?? this.isPinned,
     reminderAt: reminderAt.present ? reminderAt.value : this.reminderAt,
     imagePaths: imagePaths.present ? imagePaths.value : this.imagePaths,
+    isChecklist: isChecklist ?? this.isChecklist,
+    checklistItems: checklistItems.present
+        ? checklistItems.value
+        : this.checklistItems,
   );
   Note copyWithCompanion(NotesCompanion data) {
     return Note(
@@ -416,6 +493,12 @@ class Note extends DataClass implements Insertable<Note> {
       imagePaths: data.imagePaths.present
           ? data.imagePaths.value
           : this.imagePaths,
+      isChecklist: data.isChecklist.present
+          ? data.isChecklist.value
+          : this.isChecklist,
+      checklistItems: data.checklistItems.present
+          ? data.checklistItems.value
+          : this.checklistItems,
     );
   }
 
@@ -431,7 +514,9 @@ class Note extends DataClass implements Insertable<Note> {
           ..write('orderIndex: $orderIndex, ')
           ..write('isPinned: $isPinned, ')
           ..write('reminderAt: $reminderAt, ')
-          ..write('imagePaths: $imagePaths')
+          ..write('imagePaths: $imagePaths, ')
+          ..write('isChecklist: $isChecklist, ')
+          ..write('checklistItems: $checklistItems')
           ..write(')'))
         .toString();
   }
@@ -448,6 +533,8 @@ class Note extends DataClass implements Insertable<Note> {
     isPinned,
     reminderAt,
     imagePaths,
+    isChecklist,
+    checklistItems,
   );
   @override
   bool operator ==(Object other) =>
@@ -462,7 +549,9 @@ class Note extends DataClass implements Insertable<Note> {
           other.orderIndex == this.orderIndex &&
           other.isPinned == this.isPinned &&
           other.reminderAt == this.reminderAt &&
-          other.imagePaths == this.imagePaths);
+          other.imagePaths == this.imagePaths &&
+          other.isChecklist == this.isChecklist &&
+          other.checklistItems == this.checklistItems);
 }
 
 class NotesCompanion extends UpdateCompanion<Note> {
@@ -476,6 +565,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
   final Value<bool> isPinned;
   final Value<DateTime?> reminderAt;
   final Value<List<String>?> imagePaths;
+  final Value<bool> isChecklist;
+  final Value<List<ChecklistItem>?> checklistItems;
   const NotesCompanion({
     this.id = const Value.absent(),
     this.title = const Value.absent(),
@@ -487,6 +578,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.isPinned = const Value.absent(),
     this.reminderAt = const Value.absent(),
     this.imagePaths = const Value.absent(),
+    this.isChecklist = const Value.absent(),
+    this.checklistItems = const Value.absent(),
   });
   NotesCompanion.insert({
     this.id = const Value.absent(),
@@ -499,6 +592,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.isPinned = const Value.absent(),
     this.reminderAt = const Value.absent(),
     this.imagePaths = const Value.absent(),
+    this.isChecklist = const Value.absent(),
+    this.checklistItems = const Value.absent(),
   }) : title = Value(title),
        content = Value(content);
   static Insertable<Note> custom({
@@ -512,6 +607,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Expression<bool>? isPinned,
     Expression<DateTime>? reminderAt,
     Expression<String>? imagePaths,
+    Expression<bool>? isChecklist,
+    Expression<String>? checklistItems,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -524,6 +621,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
       if (isPinned != null) 'is_pinned': isPinned,
       if (reminderAt != null) 'reminder_at': reminderAt,
       if (imagePaths != null) 'image_paths': imagePaths,
+      if (isChecklist != null) 'is_checklist': isChecklist,
+      if (checklistItems != null) 'checklist_items': checklistItems,
     });
   }
 
@@ -538,6 +637,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Value<bool>? isPinned,
     Value<DateTime?>? reminderAt,
     Value<List<String>?>? imagePaths,
+    Value<bool>? isChecklist,
+    Value<List<ChecklistItem>?>? checklistItems,
   }) {
     return NotesCompanion(
       id: id ?? this.id,
@@ -550,6 +651,8 @@ class NotesCompanion extends UpdateCompanion<Note> {
       isPinned: isPinned ?? this.isPinned,
       reminderAt: reminderAt ?? this.reminderAt,
       imagePaths: imagePaths ?? this.imagePaths,
+      isChecklist: isChecklist ?? this.isChecklist,
+      checklistItems: checklistItems ?? this.checklistItems,
     );
   }
 
@@ -588,6 +691,14 @@ class NotesCompanion extends UpdateCompanion<Note> {
         $NotesTable.$converterimagePathsn.toSql(imagePaths.value),
       );
     }
+    if (isChecklist.present) {
+      map['is_checklist'] = Variable<bool>(isChecklist.value);
+    }
+    if (checklistItems.present) {
+      map['checklist_items'] = Variable<String>(
+        $NotesTable.$converterchecklistItemsn.toSql(checklistItems.value),
+      );
+    }
     return map;
   }
 
@@ -603,7 +714,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
           ..write('orderIndex: $orderIndex, ')
           ..write('isPinned: $isPinned, ')
           ..write('reminderAt: $reminderAt, ')
-          ..write('imagePaths: $imagePaths')
+          ..write('imagePaths: $imagePaths, ')
+          ..write('isChecklist: $isChecklist, ')
+          ..write('checklistItems: $checklistItems')
           ..write(')'))
         .toString();
   }
@@ -632,6 +745,8 @@ typedef $$NotesTableCreateCompanionBuilder =
       Value<bool> isPinned,
       Value<DateTime?> reminderAt,
       Value<List<String>?> imagePaths,
+      Value<bool> isChecklist,
+      Value<List<ChecklistItem>?> checklistItems,
     });
 typedef $$NotesTableUpdateCompanionBuilder =
     NotesCompanion Function({
@@ -645,6 +760,8 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<bool> isPinned,
       Value<DateTime?> reminderAt,
       Value<List<String>?> imagePaths,
+      Value<bool> isChecklist,
+      Value<List<ChecklistItem>?> checklistItems,
     });
 
 class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
@@ -703,6 +820,21 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
   ColumnWithTypeConverterFilters<List<String>?, List<String>, String>
   get imagePaths => $composableBuilder(
     column: $table.imagePaths,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<bool> get isChecklist => $composableBuilder(
+    column: $table.isChecklist,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<
+    List<ChecklistItem>?,
+    List<ChecklistItem>,
+    String
+  >
+  get checklistItems => $composableBuilder(
+    column: $table.checklistItems,
     builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 }
@@ -765,6 +897,16 @@ class $$NotesTableOrderingComposer
     column: $table.imagePaths,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isChecklist => $composableBuilder(
+    column: $table.isChecklist,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get checklistItems => $composableBuilder(
+    column: $table.checklistItems,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$NotesTableAnnotationComposer
@@ -814,6 +956,17 @@ class $$NotesTableAnnotationComposer
         column: $table.imagePaths,
         builder: (column) => column,
       );
+
+  GeneratedColumn<bool> get isChecklist => $composableBuilder(
+    column: $table.isChecklist,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<List<ChecklistItem>?, String>
+  get checklistItems => $composableBuilder(
+    column: $table.checklistItems,
+    builder: (column) => column,
+  );
 }
 
 class $$NotesTableTableManager
@@ -854,6 +1007,9 @@ class $$NotesTableTableManager
                 Value<bool> isPinned = const Value.absent(),
                 Value<DateTime?> reminderAt = const Value.absent(),
                 Value<List<String>?> imagePaths = const Value.absent(),
+                Value<bool> isChecklist = const Value.absent(),
+                Value<List<ChecklistItem>?> checklistItems =
+                    const Value.absent(),
               }) => NotesCompanion(
                 id: id,
                 title: title,
@@ -865,6 +1021,8 @@ class $$NotesTableTableManager
                 isPinned: isPinned,
                 reminderAt: reminderAt,
                 imagePaths: imagePaths,
+                isChecklist: isChecklist,
+                checklistItems: checklistItems,
               ),
           createCompanionCallback:
               ({
@@ -878,6 +1036,9 @@ class $$NotesTableTableManager
                 Value<bool> isPinned = const Value.absent(),
                 Value<DateTime?> reminderAt = const Value.absent(),
                 Value<List<String>?> imagePaths = const Value.absent(),
+                Value<bool> isChecklist = const Value.absent(),
+                Value<List<ChecklistItem>?> checklistItems =
+                    const Value.absent(),
               }) => NotesCompanion.insert(
                 id: id,
                 title: title,
@@ -889,6 +1050,8 @@ class $$NotesTableTableManager
                 isPinned: isPinned,
                 reminderAt: reminderAt,
                 imagePaths: imagePaths,
+                isChecklist: isChecklist,
+                checklistItems: checklistItems,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

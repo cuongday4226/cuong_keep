@@ -30,6 +30,50 @@ class StringListConverter extends TypeConverter<List<String>, String> {
   }
 }
 
+// Model cho từng mục Checklist
+class ChecklistItem {
+  final String id;
+  String text;
+  bool isCompleted;
+
+  ChecklistItem({required this.id, required this.text, this.isCompleted = false});
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'text': text,
+    'isCompleted': isCompleted,
+  };
+
+  factory ChecklistItem.fromJson(Map<String, dynamic> json) => ChecklistItem(
+    id: json['id'] as String? ?? DateTime.now().microsecondsSinceEpoch.toString(),
+    text: json['text'] as String? ?? '',
+    isCompleted: json['isCompleted'] as bool? ?? false,
+  );
+}
+
+// Converter giúp biến mảng ChecklistItem thành JSON lưu vào DB
+class ChecklistConverter extends TypeConverter<List<ChecklistItem>, String> {
+  const ChecklistConverter();
+
+  @override
+  List<ChecklistItem> fromSql(String fromDb) {
+    if (fromDb.isEmpty) return [];
+    try {
+      final decoded = json.decode(fromDb) as List;
+      return decoded.map((e) => ChecklistItem.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  @override
+  String toSql(List<ChecklistItem> value) {
+    if (value.isEmpty) return '';
+    final list = value.map((e) => e.toJson()).toList();
+    return json.encode(list);
+  }
+}
+
 // Bảng Notes: Định nghĩa cấu trúc của bảng ghi chú trong cơ sở dữ liệu SQLite
 class Notes extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -48,15 +92,19 @@ class Notes extends Table {
   
   // (Schema version 4): Thay đổi imagePath (ảnh đơn) thành imagePaths (nhiều ảnh)
   TextColumn get imagePaths => text().map(const StringListConverter()).nullable()(); // Mảng đường dẫn ảnh
+  
+  // (Schema version 5): Các cột cho tính năng Danh sách (Checklist)
+  BoolColumn get isChecklist => boolean().withDefault(const Constant(false))(); // Xác định có phải là checklist không
+  TextColumn get checklistItems => text().map(const ChecklistConverter()).nullable()(); // Mảng các mục checklist
 }
 
 @DriftDatabase(tables: [Notes])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
-  // Tăng schemaVersion lên 4 vì ta vừa đổi imagePath thành mảng imagePaths
+  // Tăng schemaVersion lên 5 vì ta vừa thêm các cột cho tính năng Checklist
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   // Xử lý di chuyển dữ liệu (Migration) khi nâng cấp phiên bản Database
   @override
@@ -79,6 +127,11 @@ class AppDatabase extends _$AppDatabase {
         if (from < 4) {
           // Nâng cấp từ version 3 lên 4: Thêm mảng hình ảnh
           await m.addColumn(notes, notes.imagePaths);
+        }
+        if (from < 5) {
+          // Nâng cấp từ version 4 lên 5: Thêm tính năng Checklist
+          await m.addColumn(notes, notes.isChecklist);
+          await m.addColumn(notes, notes.checklistItems);
         }
       },
     );

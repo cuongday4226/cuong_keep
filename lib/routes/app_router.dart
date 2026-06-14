@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import '../views/home_screen.dart';
 import '../views/note_editor_screen.dart';
+import '../views/drawing_screen.dart';
 
 // appRouter: Là biến chứa toàn bộ cấu hình điều hướng (chuyển màn hình) của ứng dụng
 // GoRouter là một thư viện giúp cho việc chuyển màn hình trong Flutter trở nên gọn gàng và giống với việc chuyển URL trên web.
@@ -24,13 +25,22 @@ final appRouter = GoRouter(
         // state.uri.queryParameters giúp ta lấy các tham số truyền vào từ URL.
         // Ví dụ nếu URL là '/note?id=5', ta sẽ lấy được số 5 để biết đang muốn sửa ghi chú số 5
         final noteId = state.uri.queryParameters['id'];
+        final action = state.uri.queryParameters['action'];
         
         return NoteEditorScreen(
           // Nếu có noteId (người dùng bấm vào ghi chú cũ để sửa), ta truyền id đó vào. 
           // Ngược lại (người dùng bấm nút Thêm mới), ta truyền null.
           noteId: noteId != null ? int.tryParse(noteId) : null,
+          startWithDrawing: action == 'draw',
+          startWithChecklist: action == 'check',
         );
       },
+    ),
+    
+    // Định nghĩa màn hình Bảng vẽ
+    GoRoute(
+      path: '/drawing',
+      builder: (context, state) => const DrawingScreen(),
     ),
   ],
 );

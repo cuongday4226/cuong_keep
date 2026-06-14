@@ -3,6 +3,7 @@ import 'package:drift/drift.dart' as drift;
 import 'dart:async';
 import '../models/database.dart';
 import '../services/notification_service.dart';
+import '../utils/string_utils.dart';
 
 class NotesViewModel extends ChangeNotifier {
   final AppDatabase _db;
@@ -60,16 +61,46 @@ class NotesViewModel extends ChangeNotifier {
             (t) => drift.OrderingTerm(expression: t.orderIndex, mode: drift.OrderingMode.asc)
           ]);
 
-    // Lọc theo từ khóa (LIKE)
+    var allNotes = await query.get();
+
+    // Lọc theo từ khóa bằng Dart (Thông minh hơn)
     if (_searchQuery.isNotEmpty) {
-      query.where((t) => t.title.like('%$_searchQuery%') | t.content.like('%$_searchQuery%'));
+      // 1. Chuẩn hóa từ khóa tìm kiếm (bỏ dấu, in thường, cắt khoảng trắng, tách từ)
+      final normalizedQuery = StringUtils.removeDiacritics(_searchQuery.toLowerCase()).trim();
+      final searchTerms = normalizedQuery.split(RegExp(r'\s+'));
+
+      allNotes = allNotes.where((note) {
+        // 2. Thu thập toàn bộ text có thể tìm kiếm của ghi chú
+        final buffer = StringBuffer();
+        buffer.writeln(note.title);
+        buffer.writeln(note.content);
+        
+        if (note.isChecklist && note.checklistItems != null) {
+          for (var item in note.checklistItems!) {
+            buffer.writeln(item.text);
+          }
+        }
+        
+        // 3. Chuẩn hóa text của ghi chú
+        final normalizedText = StringUtils.removeDiacritics(buffer.toString().toLowerCase());
+
+        // 4. Ghi chú được giữ lại nếu chứa TẤT CẢ các từ khóa (không phân biệt thứ tự)
+        return searchTerms.every((term) => normalizedText.contains(term));
+      }).toList();
     }
 
-    _notes = await query.get();
+    _notes = allNotes;
     notifyListeners();
   }
 
-  Future<void> addNote(String title, String content, int? color, [List<String>? imagePaths]) async {
+  Future<void> addNote(
+    String title,
+    String content,
+    int? color, [
+    List<String>? imagePaths,
+    bool isChecklist = false,
+    List<ChecklistItem>? checklistItems,
+  ]) async {
     final now = DateTime.now();
     
     // Tính toán orderIndex mới (Nối đuôi vào cuối danh sách)
@@ -87,22 +118,40 @@ class NotesViewModel extends ChangeNotifier {
             modifiedAt: drift.Value(now),
             orderIndex: drift.Value(newOrderIndex),
             imagePaths: drift.Value(imagePaths),
+            isChecklist: drift.Value(isChecklist),
+            checklistItems: drift.Value(checklistItems),
           ),
         );
     await _loadNotes();
   }
 
-  Future<void> updateNote(int id, String title, String content, int? color, [List<String>? imagePaths]) async {
+  Future<void> updateNote(
+    int id,
+    String title,
+    String content,
+    int? color, [
+    List<String>? imagePaths,
+    bool? isChecklist,
+    List<ChecklistItem>? checklistItems,
+  ]) async {
     final now = DateTime.now();
-    await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
-      NotesCompanion(
-        title: drift.Value(title),
-        content: drift.Value(content),
-        color: drift.Value(color),
-        modifiedAt: drift.Value(now),
-        imagePaths: drift.Value(imagePaths),
-      ),
+    
+    // Chuẩn bị các giá trị cập nhật
+    final companion = NotesCompanion(
+      title: drift.Value(title),
+      content: drift.Value(content),
+      color: drift.Value(color),
+      modifiedAt: drift.Value(now),
+      imagePaths: drift.Value(imagePaths),
     );
+    
+    // Map thành Companion hoàn chỉnh nếu có tham số
+    final finalCompanion = companion.copyWith(
+      isChecklist: isChecklist != null ? drift.Value(isChecklist) : const drift.Value.absent(),
+      checklistItems: checklistItems != null ? drift.Value(checklistItems) : const drift.Value.absent(),
+    );
+
+    await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(finalCompanion);
     await _loadNotes();
   }
 

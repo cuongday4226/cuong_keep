@@ -9,6 +9,8 @@ import 'package:go_router/go_router.dart';
 import '../view_models/notes_view_model.dart';
 import '../models/database.dart';
 import '../utils/color_utils.dart';
+import '../utils/string_utils.dart';
+import '../widgets/checklist_item_widget.dart';
 
 // NoteEditorScreen: Màn hình chỉnh sửa/thêm mới ghi chú
 // StatefulWidget là một widget CÓ LƯU TRẠNG THÁI BÊN TRONG NÓ.
@@ -17,8 +19,10 @@ import '../utils/color_utils.dart';
 class NoteEditorScreen extends StatefulWidget {
   // Biến nhận id ghi chú. Nếu là null thì nghĩa là đang thêm mới. Nếu có số thì nghĩa là đang sửa
   final int? noteId;
+  final bool startWithDrawing;
+  final bool startWithChecklist;
 
-  const NoteEditorScreen({super.key, this.noteId});
+  const NoteEditorScreen({super.key, this.noteId, this.startWithDrawing = false, this.startWithChecklist = false});
 
   @override
   State<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -37,6 +41,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   
   // Biến lưu thông tin ghi chú cũ (nếu ta đang sửa)
   Note? _existingNote;
+
+  // Biến cho tính năng Checklist
+  bool _isChecklist = false;
+  List<ChecklistItem> _checklistItems = [];
 
   // Danh sách các màu nền để người dùng chọn (chữ ".shade100" làm cho màu nhạt đi, đẹp mắt hơn cho nền)
   final List<Color> _colors = [
@@ -60,6 +68,23 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         _loadNote();
       });
     }
+    
+    // Nếu người dùng bấm tạo ghi chú có bản vẽ từ màn hình chính
+    if (widget.startWithDrawing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _openDrawingScreen();
+      });
+    }
+
+    // Nếu người dùng bấm tạo danh sách từ màn hình chính
+    if (widget.startWithChecklist) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _isChecklist = true;
+          _checklistItems = [ChecklistItem(id: DateTime.now().microsecondsSinceEpoch.toString(), text: '')];
+        });
+      });
+    }
   }
 
   // Hàm tải dữ liệu ghi chú cũ để điền sẵn vào màn hình
@@ -76,6 +101,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         _contentController.text = note.content; // Đẩy chữ nội dung vào khung nhập
         _selectedColor = note.color; // Cập nhật màu
         _imagePaths = note.imagePaths != null ? List<String>.from(note.imagePaths!) : []; // Cập nhật danh sách ảnh
+        _isChecklist = note.isChecklist;
+        _checklistItems = note.checklistItems != null ? List<ChecklistItem>.from(note.checklistItems!) : [];
       });
     } catch (e) {
       // Không tìm thấy ghi chú (tránh lỗi)
@@ -102,7 +129,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final content = _contentController.text.trim();
 
     // Nếu cả tiêu đề, nội dung và ảnh đều trống -> KHÔNG lưu gì cả
-    if (title.isEmpty && content.isEmpty && _imagePaths.isEmpty) {
+    bool isChecklistEmpty = _checklistItems.isEmpty || _checklistItems.every((e) => e.text.trim().isEmpty);
+    if (title.isEmpty && content.isEmpty && _imagePaths.isEmpty && isChecklistEmpty) {
       if (mounted) context.pop();
       return;
     }
@@ -110,13 +138,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final viewModel = context.read<NotesViewModel>();
     final pathsToSave = _imagePaths.isEmpty ? null : _imagePaths;
     
+    // Loại bỏ các ô checklist trống rỗng trước khi lưu
+    final itemsToSave = _checklistItems.where((e) => e.text.trim().isNotEmpty).toList();
+    
     try {
       // Nếu là ghi chú đã có từ trước (Đang sửa)
       if (_existingNote != null) {
-        await viewModel.updateNote(_existingNote!.id, title, content, _selectedColor, pathsToSave);
+        await viewModel.updateNote(_existingNote!.id, title, content, _selectedColor, pathsToSave, _isChecklist, itemsToSave);
       } else {
         // Nếu là ghi chú mới
-        await viewModel.addNote(title, content, _selectedColor, pathsToSave);
+        await viewModel.addNote(title, content, _selectedColor, pathsToSave, _isChecklist, itemsToSave);
       }
     } catch (e) {
       if (mounted) {
@@ -139,6 +170,140 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     context.pop();
   }
 
+  // Hàm chuyển đổi qua lại giữa Văn bản và Danh sách (Checklist)
+  void _toggleChecklistMode() {
+    setState(() {
+      _isChecklist = !_isChecklist;
+      if (_isChecklist) {
+        // Chuyển từ Text sang Checklist
+        if (_contentController.text.isNotEmpty) {
+          _checklistItems = _contentController.text.split('\n').where((s) => s.isNotEmpty).map((line) {
+            return ChecklistItem(
+              id: DateTime.now().microsecondsSinceEpoch.toString() + line.hashCode.toString(),
+              text: line,
+            );
+          }).toList();
+        }
+      } else {
+        // Chuyển từ Checklist sang Text
+        _contentController.text = _checklistItems.where((e) => e.text.isNotEmpty).map((e) => e.text).join('\n');
+      }
+    });
+  }
+
+  // Hàm xây dựng giao diện Danh sách kiểm tra (Checklist)
+  Widget _buildChecklistUI() {
+    final unchecked = _checklistItems.where((e) => !e.isCompleted).toList();
+    final checked = _checklistItems.where((e) => e.isCompleted).toList();
+
+    return ListView(
+      children: [
+        ReorderableListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          buildDefaultDragHandles: false, // Tự xử lý nút kéo thả
+          itemCount: unchecked.length,
+          onReorder: (oldIndex, newIndex) {
+            if (oldIndex < newIndex) newIndex -= 1;
+            setState(() {
+              final item = unchecked.removeAt(oldIndex);
+              unchecked.insert(newIndex, item);
+              _checklistItems = [...unchecked, ...checked];
+            });
+          },
+          itemBuilder: (context, index) {
+            final item = unchecked[index];
+            return ReorderableDragStartListener(
+              key: ValueKey(item.id),
+              index: index,
+              child: ChecklistItemWidget(
+                item: item,
+                onChanged: (text) => item.text = text,
+                onToggle: () {
+                  setState(() {
+                    item.isCompleted = true;
+                    // Chuyển xuống danh sách hoàn thành và sắp xếp ABC
+                    _checklistItems = [...unchecked.where((e) => e != item), item, ...checked];
+                    _checklistItems.sort((a, b) {
+                      if (a.isCompleted == b.isCompleted) {
+                        return StringUtils.removeDiacritics(a.text.toLowerCase())
+                            .compareTo(StringUtils.removeDiacritics(b.text.toLowerCase()));
+                      }
+                      return a.isCompleted ? 1 : -1;
+                    });
+                  });
+                },
+                onSubmitted: () {
+                  setState(() {
+                    // Thêm 1 ô trống ngay dưới ô hiện tại
+                    final newItem = ChecklistItem(id: DateTime.now().microsecondsSinceEpoch.toString(), text: '');
+                    final insertIndex = _checklistItems.indexOf(item) + 1;
+                    _checklistItems.insert(insertIndex, newItem);
+                  });
+                },
+                onDeleted: () {
+                  setState(() => _checklistItems.remove(item));
+                },
+                autofocus: item.text.isEmpty,
+              ),
+            );
+          },
+        ),
+        // Nút thêm mục mới (Luôn nằm dưới các mục chưa check)
+        ListTile(
+          leading: const Padding(
+            padding: EdgeInsets.only(left: 36), // Căn ngang với ô text
+            child: Icon(Icons.add, color: Colors.grey),
+          ),
+          title: const Text('Mục danh sách', style: TextStyle(color: Colors.grey)),
+          contentPadding: EdgeInsets.zero,
+          onTap: () {
+            setState(() {
+              _checklistItems.insert(
+                unchecked.length,
+                ChecklistItem(id: DateTime.now().microsecondsSinceEpoch.toString(), text: '')
+              );
+            });
+          },
+        ),
+        // Danh sách đã check
+        if (checked.isNotEmpty) ...[
+          const Divider(),
+          ExpansionTile(
+            title: Text('${checked.length} mục đã hoàn thành', style: const TextStyle(fontSize: 14)),
+            initiallyExpanded: true,
+            children: checked.map((item) {
+              return ChecklistItemWidget(
+                key: ValueKey(item.id),
+                item: item,
+                onChanged: (text) => item.text = text,
+                onToggle: () {
+                  setState(() {
+                    item.isCompleted = false;
+                    _checklistItems.remove(item);
+                    _checklistItems.insert(unchecked.length, item); // Bay lên trên
+                    // Sắp xếp lại
+                    _checklistItems.sort((a, b) {
+                      if (a.isCompleted == b.isCompleted) {
+                        return StringUtils.removeDiacritics(a.text.toLowerCase())
+                            .compareTo(StringUtils.removeDiacritics(b.text.toLowerCase()));
+                      }
+                      return a.isCompleted ? 1 : -1;
+                    });
+                  });
+                },
+                onSubmitted: () {},
+                onDeleted: () {
+                  setState(() => _checklistItems.remove(item));
+                },
+              );
+            }).toList(),
+          ),
+        ],
+      ],
+    );
+  }
+
   // Hàm build() chứa toàn bộ giao diện màn hình
   @override
   Widget build(BuildContext context) {
@@ -157,6 +322,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           backgroundColor: Colors.transparent, // AppBar trong suốt để hòa làm một với màu nền
           elevation: 0, // Không có bóng đổ (làm cho phẳng)
           actions: [
+            // Nút Bật/tắt hộp kiểm
+            IconButton(
+              icon: Icon(_isChecklist ? Icons.check_box_outlined : Icons.add_box_outlined),
+              tooltip: _isChecklist ? 'Ẩn hộp kiểm' : 'Hiển thị hộp kiểm',
+              onPressed: _toggleChecklistMode,
+            ),
             // Chỉ hiển thị nút Xóa (thùng rác) khi đây là bản sửa của ghi chú cũ
             if (_existingNote != null)
               IconButton(
@@ -243,16 +414,18 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               ),
               // Expanded giúp khung nội dung chiếm toàn bộ phần diện tích màn hình còn lại phía dưới
               Expanded(
-                child: TextField(
-                  controller: _contentController, // Khung nội dung
-                  style: Theme.of(context).textTheme.bodyLarge,
-                  decoration: const InputDecoration(
-                    hintText: 'Ghi chú...',
-                    border: InputBorder.none, // Tương tự, không viền
-                  ),
-                  maxLines: null, // Gõ xuống dòng thoải mái
-                  keyboardType: TextInputType.multiline, // Bật bàn phím phù hợp để gõ nhiều dòng
-                ),
+                child: _isChecklist
+                    ? _buildChecklistUI()
+                    : TextField(
+                        controller: _contentController, // Khung nội dung
+                        style: Theme.of(context).textTheme.bodyLarge,
+                        decoration: const InputDecoration(
+                          hintText: 'Ghi chú...',
+                          border: InputBorder.none, // Tương tự, không viền
+                        ),
+                        maxLines: null, // Gõ xuống dòng thoải mái
+                        keyboardType: TextInputType.multiline, // Bật bàn phím phù hợp để gõ nhiều dòng
+                      ),
               ),
             ],
           ),
@@ -284,6 +457,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 tooltip: 'Dán ảnh (Ctrl+V)',
                 onPressed: _pasteImage,
               ),
+              // Nút Vẽ tay
+              IconButton(
+                icon: const Icon(Icons.brush_outlined),
+                tooltip: 'Bản vẽ mới',
+                onPressed: _openDrawingScreen,
+              ),
             ],
           ),
         ),
@@ -297,6 +476,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     if (result != null && result.files.single.path != null) {
       setState(() {
         _imagePaths.add(result.files.single.path!);
+      });
+    }
+  }
+
+  // Hàm mở màn hình Bảng vẽ
+  Future<void> _openDrawingScreen() async {
+    final result = await context.push('/drawing');
+    if (result != null && result is String) {
+      setState(() {
+        _imagePaths.add(result);
       });
     }
   }

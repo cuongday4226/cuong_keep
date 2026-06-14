@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 import '../view_models/notes_view_model.dart';
 import '../view_models/theme_view_model.dart';
 import '../utils/color_utils.dart';
+import '../utils/string_utils.dart';
+import '../models/database.dart';
 import 'package:intl/intl.dart';
 
 // Đổi từ StatelessWidget sang StatefulWidget để có thể quản lý trạng thái của Navigation Drawer
@@ -20,6 +22,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   // Biến lưu trữ mục nào đang được chọn trong ngăn kéo (0 = Ghi chú, mặc định)
   int _selectedIndex = 0;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,14 +93,30 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: TextField(
+            controller: _searchController,
             onChanged: (text) {
               context.read<NotesViewModel>().setSearchQuery(text); // Gửi chữ về ViewModel để lọc
             },
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: 'Tìm kiếm',
-              prefixIcon: Icon(Icons.search),
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _searchController,
+                builder: (context, value, child) {
+                  if (value.text.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return IconButton(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      _searchController.clear();
+                      context.read<NotesViewModel>().setSearchQuery('');
+                    },
+                  );
+                },
+              ),
               border: InputBorder.none, // Xóa gạch chân mặc định của TextField
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12), // Căn giữa chữ
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // Căn giữa chữ
             ),
           ),
         ),
@@ -173,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           icon: const Icon(Icons.check_box_outlined),
                           tooltip: 'Danh sách mới',
                           onPressed: () {
-                            context.push('/note');
+                            context.push('/note?action=check');
                           },
                         ),
                         // Nút vẽ tay
@@ -181,7 +206,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           icon: const Icon(Icons.brush),
                           tooltip: 'Ghi chú có bản vẽ',
                           onPressed: () {
-                            context.push('/note');
+                            context.push('/note?action=draw');
                           },
                         ),
                         // Nút thêm ảnh
@@ -367,8 +392,75 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 4),
 
-                                  // Nội dung văn bản
-                                  if (note.content.isNotEmpty)
+                                  // Nội dung văn bản hoặc danh sách
+                                  if (note.isChecklist && note.checklistItems != null)
+                                    ...() {
+                                      // Sao chép và sắp xếp danh sách: Chưa check lên trên, đã check xuống dưới, cùng loại thì xếp ABC
+                                      final displayItems = List<ChecklistItem>.from(note.checklistItems!);
+                                      displayItems.sort((a, b) {
+                                        if (a.isCompleted == b.isCompleted) {
+                                          return StringUtils.removeDiacritics(a.text.toLowerCase())
+                                              .compareTo(StringUtils.removeDiacritics(b.text.toLowerCase()));
+                                        }
+                                        return a.isCompleted ? 1 : -1;
+                                      });
+
+                                      return displayItems.take(5).map((item) {
+                                        return Padding(
+                                          padding: const EdgeInsets.only(bottom: 4),
+                                          child: Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Padding(
+                                                padding: const EdgeInsets.only(right: 8, bottom: 4),
+                                                child: IconButton(
+                                                  padding: EdgeInsets.zero,
+                                                  constraints: const BoxConstraints(),
+                                                  icon: Icon(
+                                                    item.isCompleted ? Icons.check_box : Icons.check_box_outline_blank,
+                                                    size: 16,
+                                                    color: item.isCompleted ? Colors.grey : Theme.of(context).colorScheme.onSurfaceVariant,
+                                                  ),
+                                                  onPressed: () {
+                                                    // Tìm vị trí của mục này và đảo ngược trạng thái
+                                                    final updatedItems = List<ChecklistItem>.from(note.checklistItems!);
+                                                    final idx = updatedItems.indexWhere((e) => e.id == item.id);
+                                                    if (idx != -1) {
+                                                      updatedItems[idx].isCompleted = !updatedItems[idx].isCompleted;
+                                                      
+                                                      // Sắp xếp lại trước khi lưu
+                                                      updatedItems.sort((a, b) {
+                                                        if (a.isCompleted == b.isCompleted) {
+                                                          return StringUtils.removeDiacritics(a.text.toLowerCase())
+                                                              .compareTo(StringUtils.removeDiacritics(b.text.toLowerCase()));
+                                                        }
+                                                        return a.isCompleted ? 1 : -1;
+                                                      });
+
+                                                      viewModel.updateNote(
+                                                        note.id, note.title, note.content, note.color, note.imagePaths, true, updatedItems
+                                                      );
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                              Expanded(
+                                                child: Text(
+                                                  item.text,
+                                                  style: TextStyle(
+                                                    decoration: item.isCompleted ? TextDecoration.lineThrough : null,
+                                                    color: item.isCompleted ? Colors.grey : null,
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      });
+                                    }(),
+                                  if (!note.isChecklist && note.content.isNotEmpty)
                                     Text(
                                       note.content,
                                       style: Theme.of(context).textTheme.bodyMedium,
