@@ -402,7 +402,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Hàng Tiêu đề và Nút Ghim
+                                  // Hàng Tiêu đề và chừa khoảng trống cho Nút Ghim
                                   Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
@@ -416,19 +416,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                      // Nút Ghim (Pin)
-                                      IconButton(
-                                        constraints: const BoxConstraints(),
-                                        padding: EdgeInsets.zero,
-                                        icon: Icon(
-                                          note.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                                          color: note.isPinned ? Theme.of(context).colorScheme.primary : null,
-                                          size: 20,
-                                        ),
-                                        onPressed: () {
-                                          viewModel.togglePin(note.id, note.isPinned);
-                                        },
-                                      ),
+                                      const SizedBox(width: 32), // Chừa không gian cho nút ghim nổi lên trên
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -612,6 +600,30 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                     ),
+                  // Nút ghim luôn cố định ở góc trên cùng bên phải
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Material(
+                      color: note.imagePaths?.isNotEmpty == true ? Colors.black.withOpacity(0.3) : Colors.transparent,
+                      shape: const CircleBorder(),
+                      clipBehavior: Clip.antiAlias,
+                      child: IconButton(
+                        constraints: const BoxConstraints(),
+                        padding: const EdgeInsets.all(8),
+                        icon: Icon(
+                          note.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                          color: note.isPinned 
+                              ? Theme.of(context).colorScheme.primary 
+                              : (note.imagePaths?.isNotEmpty == true ? Colors.white : null),
+                          size: 20,
+                        ),
+                        onPressed: () {
+                          viewModel.togglePin(note.id, note.isPinned);
+                        },
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
