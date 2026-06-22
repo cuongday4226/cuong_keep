@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:super_clipboard/super_clipboard.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../view_models/notes_view_model.dart';
@@ -11,6 +10,7 @@ import '../models/database.dart';
 import '../utils/color_utils.dart';
 import '../utils/string_utils.dart';
 import '../widgets/checklist_item_widget.dart';
+import '../utils/file_utils.dart';
 
 // NoteEditorScreen: Màn hình chỉnh sửa/thêm mới ghi chú
 // StatefulWidget là một widget CÓ LƯU TRẠNG THÁI BÊN TRONG NÓ.
@@ -502,7 +502,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (reader.canProvide(Formats.png)) {
         reader.getFile(Formats.png, (file) async {
           final imageBytes = await file.readAll();
-          final dir = await getApplicationDocumentsDirectory();
+          final dir = await FileUtils.getDataDirectory();
           final targetFile = File('${dir.path}/pasted_image_${DateTime.now().millisecondsSinceEpoch}.png');
           await targetFile.writeAsBytes(imageBytes);
           
@@ -517,7 +517,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (reader.canProvide(Formats.jpeg)) {
         reader.getFile(Formats.jpeg, (file) async {
           final imageBytes = await file.readAll();
-          final dir = await getApplicationDocumentsDirectory();
+          final dir = await FileUtils.getDataDirectory();
           final targetFile = File('${dir.path}/pasted_image_${DateTime.now().millisecondsSinceEpoch}.jpeg');
           await targetFile.writeAsBytes(imageBytes);
           

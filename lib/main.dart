@@ -10,9 +10,14 @@ import 'view_models/theme_view_model.dart';
 import 'routes/app_router.dart';
 import 'services/notification_service.dart';
 
+import 'utils/file_utils.dart';
+
 void main() async {
   // Hàm này đảm bảo các công cụ hỗ trợ lõi của Flutter được bật lên và sẵn sàng làm việc trước khi giao diện bắt đầu chạy
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Dọn dẹp và quy hoạch dữ liệu cũ (nếu có) vào thư mục chung trước khi mở DB
+  await FileUtils.migrateOldData();
   
   // Khởi tạo dịch vụ thông báo
   await NotificationService().init();
@@ -21,6 +26,7 @@ void main() async {
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
     size: Size(1000, 700),
+    minimumSize: Size(600, 500), // Giới hạn kích thước thu nhỏ tối thiểu
     center: true,
     title: 'Cuong Keep',
   );

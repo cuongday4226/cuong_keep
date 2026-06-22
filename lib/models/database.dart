@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import '../utils/file_utils.dart';
 
 part 'database.g.dart';
 
@@ -140,7 +140,7 @@ class AppDatabase extends _$AppDatabase {
 
 LazyDatabase _openConnection() {
   return LazyDatabase(() async {
-    final dbFolder = await getApplicationDocumentsDirectory();
+    final dbFolder = await FileUtils.getDataDirectory();
     final file = File(p.join(dbFolder.path, 'notes_db.sqlite'));
     return NativeDatabase.createInBackground(file);
   });

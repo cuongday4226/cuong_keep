@@ -10,6 +10,7 @@ import '../utils/color_utils.dart';
 import '../utils/string_utils.dart';
 import '../models/database.dart';
 import 'package:intl/intl.dart';
+import '../services/backup_service.dart';
 
 // Đổi từ StatelessWidget sang StatefulWidget để có thể quản lý trạng thái của Navigation Drawer
 class HomeScreen extends StatefulWidget {
@@ -32,6 +33,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final notesVM = context.watch<NotesViewModel>();
+    final isSelectionMode = notesVM.isSelectionMode;
+
     return Scaffold(
       // --- THANH TRƯỢT BÊN TRÁI (NAVIGATION DRAWER) ---
       drawer: NavigationDrawer(
@@ -43,26 +47,26 @@ class _HomeScreenState extends State<HomeScreen> {
           // Tự động đóng Drawer sau khi chọn (trên thiết bị hẹp)
           Navigator.pop(context);
         },
-        children: const [
-          Padding(
+        children: [
+          const Padding(
             padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
             child: Text(
               'Cuong Keep',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
           ),
-          NavigationDrawerDestination(
+          const NavigationDrawerDestination(
             icon: Icon(Icons.lightbulb_outline),
             selectedIcon: Icon(Icons.lightbulb),
             label: Text('Ghi chú'),
           ),
-          NavigationDrawerDestination(
+          const NavigationDrawerDestination(
             icon: Icon(Icons.notifications_none),
             selectedIcon: Icon(Icons.notifications),
             label: Text('Lời nhắc'),
           ),
-          Divider(indent: 28, endIndent: 28),
-          Padding(
+          const Divider(indent: 28, endIndent: 28),
+          const Padding(
             padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
             child: Text(
               'Nhãn',
@@ -70,20 +74,39 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           // Có thể thêm các mục Nhãn ở đây sau này
-          Divider(indent: 28, endIndent: 28),
-          NavigationDrawerDestination(
-            icon: Icon(Icons.archive_outlined),
-            selectedIcon: Icon(Icons.archive),
-            label: Text('Lưu trữ'),
-          ),
-          NavigationDrawerDestination(
+          const Divider(indent: 28, endIndent: 28),
+          const NavigationDrawerDestination(
             icon: Icon(Icons.delete_outline),
             selectedIcon: Icon(Icons.delete),
             label: Text('Thùng rác'),
           ),
         ],
       ),
-      appBar: AppBar(
+      appBar: isSelectionMode 
+      ? AppBar(
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => notesVM.clearSelection(),
+          ),
+          title: Text(
+            'Đã chọn ${notesVM.selectedNoteIds.length} mục',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.push_pin_outlined),
+              tooltip: 'Ghim / Bỏ ghim',
+              onPressed: () => notesVM.togglePinSelectedNotes(),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Xóa các mục đã chọn',
+              onPressed: () => notesVM.deleteSelectedNotes(),
+            ),
+          ],
+        )
+      : AppBar(
         // Tiêu đề bây giờ là một thanh Tìm kiếm (Search bar)
         title: Container(
           height: 48,
@@ -320,34 +343,52 @@ class _HomeScreenState extends State<HomeScreen> {
             }
 
             // Widget tạo ra 1 thẻ Ghi chú hoàn chỉnh, tự động co giãn theo nội dung
-            Widget buildNoteCard(int index) {
-              final note = viewModel.notes[index];
+            Widget buildNoteCard(Note note) {
               final color = ColorUtils.getAdaptiveColor(context, note.color);
+              final isSelected = viewModel.selectedNoteIds.contains(note.id);
 
-              return Card(
+              return GestureDetector(
                 key: ValueKey(note.id),
-                color: color,
-                elevation: 1,
-                margin: EdgeInsets.only(bottom: isListView ? 12 : 0), // Nếu là List thì thêm khoảng cách dưới
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant, width: 1),
-                ),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    context.push('/note?id=${note.id}');
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min, // QUAN TRỌNG: Ôm sát nội dung, không bị kéo dãn cứng ngắc
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // --- 1. HIỂN THỊ HÌNH ẢNH NẾU CÓ ---
-                      if (note.imagePaths != null && note.imagePaths!.isNotEmpty)
-                        ClipRRect(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                          child: buildImageGallery(note.imagePaths!),
-                        ),
+                onSecondaryTap: () {
+                  // Click chuột phải luôn bật/tắt chọn
+                  viewModel.toggleSelection(note.id);
+                },
+                child: Card(
+                  color: color,
+                  elevation: isSelected ? 4 : 1,
+                  margin: EdgeInsets.only(bottom: isListView ? 12 : 0), // Nếu là List thì thêm khoảng cách dưới
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: isSelected ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.outlineVariant, 
+                      width: isSelected ? 2 : 1
+                    ),
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onLongPress: () {
+                      // Nhấn giữ bật/tắt chọn
+                      viewModel.toggleSelection(note.id);
+                    },
+                    onTap: () {
+                      if (viewModel.isSelectionMode) {
+                        viewModel.toggleSelection(note.id);
+                      } else {
+                        context.push('/note?id=${note.id}');
+                      }
+                    },
+                    child: Stack(
+                      children: [
+                        Column(
+                          mainAxisSize: MainAxisSize.min, // QUAN TRỌNG: Ôm sát nội dung, không bị kéo dãn cứng ngắc
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // --- 1. HIỂN THỊ HÌNH ẢNH NẾU CÓ ---
+                            if (note.imagePaths != null && note.imagePaths!.isNotEmpty)
+                              ClipRRect(
+                                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                                child: buildImageGallery(note.imagePaths!),
+                              ),
 
                       // --- 2. NỘI DUNG CHÍNH (TIÊU ĐỀ, TEXT) ---
                       // Dùng Flexible kết hợp với ClipRect để ngăn chữ tràn ra ngoài giới hạn của thẻ (gây lỗi Overflow)
@@ -422,6 +463,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     color: item.isCompleted ? Colors.grey : Theme.of(context).colorScheme.onSurfaceVariant,
                                                   ),
                                                   onPressed: () {
+                                                    // Nếu đang đa chọn thì không cho ấn nút checklist
+                                                    if (viewModel.isSelectionMode) {
+                                                      viewModel.toggleSelection(note.id);
+                                                      return;
+                                                    }
                                                     // Tìm vị trí của mục này và đảo ngược trạng thái
                                                     final updatedItems = List<ChecklistItem>.from(note.checklistItems!);
                                                     final idx = updatedItems.indexWhere((e) => e.id == item.id);
@@ -552,48 +598,163 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                ),
-              );
-            }
+                  if (isSelected)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: CircleAvatar(
+                        radius: 14,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        child: Icon(
+                          Icons.check,
+                          size: 18,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
 
-            if (isListView) {
-              // GIAO DIỆN DANH SÁCH (1 cột) dùng ReorderableListView để hỗ trợ kéo thả
-              return ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600), // Giới hạn độ rộng danh sách cho đẹp
-                child: Center(
-                  child: SizedBox(
-                    width: constraints.maxWidth > 600 ? 600 : constraints.maxWidth,
-                    child: ReorderableListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: viewModel.notes.length,
-                      onReorder: (oldIndex, newIndex) {
-                        viewModel.reorderNotes(oldIndex, newIndex);
-                      },
-                      itemBuilder: (context, index) {
-                        return buildNoteCard(index);
-                      },
+            Widget buildSectionHeader(String title) {
+              return SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
               );
-            } else {
-              // Tự động tính số cột sao cho mỗi thẻ rộng không quá 280px
-              int crossAxisCount = (constraints.maxWidth / 280).ceil();
-              if (crossAxisCount < 2) crossAxisCount = 2; // Ít nhất 2 cột
+            }
 
-              return ReorderableGridView.count(
-                padding: const EdgeInsets.all(16),
-                crossAxisCount: crossAxisCount,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 0.85, // Tỷ lệ thẻ
-                onReorder: (oldIndex, newIndex) {
-                  viewModel.reorderNotes(oldIndex, newIndex);
-                },
-                children: List.generate(viewModel.notes.length, (index) {
-                  return buildNoteCard(index);
-                }),
+            final slivers = <Widget>[];
+
+            if (viewModel.pinnedNotes.isNotEmpty) {
+              slivers.add(buildSectionHeader('ĐƯỢC GHIM'));
+              if (isListView) {
+                slivers.add(
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverReorderableList(
+                      itemCount: viewModel.pinnedNotes.length,
+                      onReorder: (oldIndex, newIndex) {
+                        viewModel.reorderPinnedNotes(oldIndex, newIndex);
+                      },
+                      itemBuilder: (context, index) {
+                        final note = viewModel.pinnedNotes[index];
+                        return ReorderableDragStartListener(
+                          key: ValueKey('pinned_${note.id}'),
+                          index: index,
+                          child: buildNoteCard(note),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              } else {
+                int crossAxisCount = (constraints.maxWidth / 280).ceil();
+                if (crossAxisCount < 2) crossAxisCount = 2;
+                slivers.add(
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: ReorderableSliverGridView.count(
+                      crossAxisCount: crossAxisCount,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 0.85,
+                      dragStartDelay: Duration.zero,
+                      onReorder: (oldIndex, newIndex) {
+                        viewModel.reorderPinnedNotes(oldIndex, newIndex);
+                      },
+                      children: List.generate(viewModel.pinnedNotes.length, (index) {
+                        final note = viewModel.pinnedNotes[index];
+                        return SizedBox(
+                          key: ValueKey('pinned_${note.id}'),
+                          child: buildNoteCard(note),
+                        );
+                      }),
+                    ),
+                  ),
+                );
+              }
+            }
+
+            if (viewModel.unpinnedNotes.isNotEmpty) {
+              if (viewModel.pinnedNotes.isNotEmpty) {
+                slivers.add(buildSectionHeader('KHÁC'));
+              }
+              if (isListView) {
+                slivers.add(
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverReorderableList(
+                      itemCount: viewModel.unpinnedNotes.length,
+                      onReorder: (oldIndex, newIndex) {
+                        viewModel.reorderUnpinnedNotes(oldIndex, newIndex);
+                      },
+                      itemBuilder: (context, index) {
+                        final note = viewModel.unpinnedNotes[index];
+                        return ReorderableDragStartListener(
+                          key: ValueKey('unpinned_${note.id}'),
+                          index: index,
+                          child: buildNoteCard(note),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              } else {
+                int crossAxisCount = (constraints.maxWidth / 280).ceil();
+                if (crossAxisCount < 2) crossAxisCount = 2;
+                slivers.add(
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: ReorderableSliverGridView.count(
+                      crossAxisCount: crossAxisCount,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: 12,
+                      childAspectRatio: 0.85,
+                      dragStartDelay: Duration.zero,
+                      onReorder: (oldIndex, newIndex) {
+                        viewModel.reorderUnpinnedNotes(oldIndex, newIndex);
+                      },
+                      children: List.generate(viewModel.unpinnedNotes.length, (index) {
+                        final note = viewModel.unpinnedNotes[index];
+                        return SizedBox(
+                          key: ValueKey('unpinned_${note.id}'),
+                          child: buildNoteCard(note),
+                        );
+                      }),
+                    ),
+                  ),
+                );
+              }
+            }
+
+            Widget scrollView = CustomScrollView(
+              slivers: slivers.isEmpty 
+                  ? [const SliverToBoxAdapter(child: Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Chưa có ghi chú nào'))))] 
+                  : slivers,
+            );
+
+            if (isListView) {
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 600),
+                  child: scrollView,
+                ),
               );
+            } else {
+              return scrollView;
             }
           },
         );
@@ -731,11 +892,31 @@ class _HomeScreenState extends State<HomeScreen> {
                       subtitle: const Text('Bật/tắt thông báo lời nhắc nhở'),
                       value: isNotificationEnabled,
                       onChanged: (bool value) {
-                        // Cập nhật giao diện của Switch ngay lập tức
                         setDialogState(() {
                           isNotificationEnabled = value;
                         });
-                        // TODO: Sau này sẽ lưu biến isNotificationEnabled này vào SharedPreferences
+                        // Có thể lưu trạng thái này vào SharedPreferences sau này
+                      },
+                    ),
+                    const Divider(),
+                    // Mục 3: Sao lưu dữ liệu
+                    ListTile(
+                      leading: const Icon(Icons.cloud_upload_outlined),
+                      title: const Text('Sao lưu dữ liệu'),
+                      subtitle: const Text('Xuất ghi chú và hình ảnh'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        BackupService.backupData(context);
+                      },
+                    ),
+                    // Mục 4: Phục hồi dữ liệu
+                    ListTile(
+                      leading: const Icon(Icons.cloud_download_outlined),
+                      title: const Text('Nhập dữ liệu'),
+                      subtitle: const Text('Khôi phục từ tệp ZIP'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        BackupService.restoreData(context);
                       },
                     ),
                   ],

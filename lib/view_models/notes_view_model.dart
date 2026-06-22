@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:drift/drift.dart' as drift;
 import 'dart:async';
+import 'dart:io';
 import '../models/database.dart';
 import '../services/notification_service.dart';
 import '../utils/string_utils.dart';
@@ -12,7 +13,15 @@ class NotesViewModel extends ChangeNotifier {
   Timer? _reminderTimer;
 
   List<Note> get notes => _notes;
+  List<Note> get pinnedNotes => _notes.where((n) => n.isPinned).toList();
+  List<Note> get unpinnedNotes => _notes.where((n) => !n.isPinned).toList();
+
   String get searchQuery => _searchQuery;
+
+  // --- TRẠNG THÁI ĐA CHỌN ---
+  final Set<int> _selectedNoteIds = {};
+  Set<int> get selectedNoteIds => _selectedNoteIds;
+  bool get isSelectionMode => _selectedNoteIds.isNotEmpty;
 
   NotesViewModel(this._db) {
     _loadNotes();
@@ -45,7 +54,13 @@ class NotesViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _reminderTimer?.cancel();
+    _db.close();
     super.dispose();
+  }
+
+  // Đóng database để phục vụ cho việc sao lưu / phục hồi
+  Future<void> closeDatabase() async {
+    await _db.close();
   }
 
   // --- HÀM TÌM KIẾM ---
@@ -65,12 +80,10 @@ class NotesViewModel extends ChangeNotifier {
 
     // Lọc theo từ khóa bằng Dart (Thông minh hơn)
     if (_searchQuery.isNotEmpty) {
-      // 1. Chuẩn hóa từ khóa tìm kiếm (bỏ dấu, in thường, cắt khoảng trắng, tách từ)
       final normalizedQuery = StringUtils.removeDiacritics(_searchQuery.toLowerCase()).trim();
       final searchTerms = normalizedQuery.split(RegExp(r'\s+'));
 
       allNotes = allNotes.where((note) {
-        // 2. Thu thập toàn bộ text có thể tìm kiếm của ghi chú
         final buffer = StringBuffer();
         buffer.writeln(note.title);
         buffer.writeln(note.content);
@@ -81,16 +94,85 @@ class NotesViewModel extends ChangeNotifier {
           }
         }
         
-        // 3. Chuẩn hóa text của ghi chú
         final normalizedText = StringUtils.removeDiacritics(buffer.toString().toLowerCase());
-
-        // 4. Ghi chú được giữ lại nếu chứa TẤT CẢ các từ khóa (không phân biệt thứ tự)
         return searchTerms.every((term) => normalizedText.contains(term));
       }).toList();
     }
 
     _notes = allNotes;
+    
+    // Xóa những ID đã bị lọc khỏi danh sách được chọn
+    final currentNoteIds = _notes.map((n) => n.id).toSet();
+    _selectedNoteIds.removeWhere((id) => !currentNoteIds.contains(id));
+
     notifyListeners();
+  }
+
+  // --- HÀM XỬ LÝ ĐA CHỌN ---
+  void toggleSelection(int id) {
+    if (_selectedNoteIds.contains(id)) {
+      _selectedNoteIds.remove(id);
+    } else {
+      _selectedNoteIds.add(id);
+    }
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    if (_selectedNoteIds.isNotEmpty) {
+      _selectedNoteIds.clear();
+      notifyListeners();
+    }
+  }
+
+  void selectAll() {
+    for (var note in _notes) {
+      _selectedNoteIds.add(note.id);
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteSelectedNotes() async {
+    if (_selectedNoteIds.isEmpty) return;
+    for (int id in _selectedNoteIds) {
+      // Xóa các file ảnh đính kèm trước khi xóa ghi chú khỏi DB
+      try {
+        final note = _notes.firstWhere((n) => n.id == id);
+        if (note.imagePaths != null && note.imagePaths!.isNotEmpty) {
+          for (var path in note.imagePaths!) {
+            final file = File(path);
+            if (file.existsSync()) {
+              file.deleteSync();
+            }
+          }
+        }
+      } catch (e) {
+        // Bỏ qua lỗi nếu không tìm thấy
+      }
+
+      await (_db.delete(_db.notes)..where((t) => t.id.equals(id))).go();
+    }
+    _selectedNoteIds.clear();
+    await _loadNotes();
+  }
+
+  Future<void> togglePinSelectedNotes() async {
+    if (_selectedNoteIds.isEmpty) return;
+    bool allPinned = true;
+    for (int id in _selectedNoteIds) {
+      final note = _notes.firstWhere((n) => n.id == id);
+      if (!note.isPinned) {
+        allPinned = false;
+        break;
+      }
+    }
+    for (int id in _selectedNoteIds) {
+      await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+        NotesCompanion(isPinned: drift.Value(!allPinned))
+      );
+    }
+    _selectedNoteIds.clear();
+    await _loadNotes();
   }
 
   Future<void> addNote(
@@ -156,38 +238,56 @@ class NotesViewModel extends ChangeNotifier {
   }
 
   Future<void> deleteNote(int id) async {
+    // Xóa file ảnh trước
+    try {
+      final note = _notes.firstWhere((n) => n.id == id);
+      if (note.imagePaths != null && note.imagePaths!.isNotEmpty) {
+        for (var path in note.imagePaths!) {
+          final file = File(path);
+          if (file.existsSync()) {
+            file.deleteSync();
+          }
+        }
+      }
+    } catch (e) {
+      // Bỏ qua lỗi
+    }
+
     await (_db.delete(_db.notes)..where((t) => t.id.equals(id))).go();
     await _loadNotes();
   }
 
-  // Hàm xử lý hoán đổi vị trí ghi chú khi kéo thả (Reorder)
-  Future<void> reorderNotes(int oldIndex, int newIndex) async {
-    // Theo tài liệu của ReorderableGridView, khi kéo thả từ trên xuống thì newIndex bị lệch 1 đơn vị
-    // Ta trừ đi 1 để bù trừ sự sai lệch đó
-    if (oldIndex < newIndex) {
-      newIndex -= 1;
-    }
-    
-    // Nếu vẫn ở vị trí cũ thì bỏ qua
+  Future<void> reorderPinnedNotes(int oldIndex, int newIndex) async {
+    if (oldIndex < newIndex) newIndex -= 1;
     if (oldIndex == newIndex) return;
 
-    // Lấy phần tử đang được kéo thả (remove khỏi vị trí cũ)
-    final Note draggedItem = _notes.removeAt(oldIndex);
-    // Chèn nó vào vị trí mới mà người dùng vừa thả ra
-    _notes.insert(newIndex, draggedItem);
-    
-    // Cập nhật lại giao diện NGAY LẬP TỨC để thao tác vuốt thả được mượt mà, không bị lag chờ database
+    final List<Note> pinned = pinnedNotes;
+    final Note draggedItem = pinned.removeAt(oldIndex);
+    pinned.insert(newIndex, draggedItem);
+
+    await _updateNotesOrder(pinned, unpinnedNotes);
+  }
+
+  Future<void> reorderUnpinnedNotes(int oldIndex, int newIndex) async {
+    if (oldIndex < newIndex) newIndex -= 1;
+    if (oldIndex == newIndex) return;
+
+    final List<Note> unpinned = unpinnedNotes;
+    final Note draggedItem = unpinned.removeAt(oldIndex);
+    unpinned.insert(newIndex, draggedItem);
+
+    await _updateNotesOrder(pinnedNotes, unpinned);
+  }
+
+  Future<void> _updateNotesOrder(List<Note> pinned, List<Note> unpinned) async {
+    _notes = [...pinned, ...unpinned];
     notifyListeners();
 
-    // Bước tiếp theo: Cập nhật biến orderIndex của các ghi chú bị thay đổi vị trí xuống cơ sở dữ liệu SQLite
     for (int i = 0; i < _notes.length; i++) {
-      // Chỉ cập nhật những ô có thứ tự orderIndex khác với số index thực tế của nó
       if (_notes[i].orderIndex != i) {
-        // Cập nhật trong DB
         await (_db.update(_db.notes)..where((t) => t.id.equals(_notes[i].id))).write(
           NotesCompanion(orderIndex: drift.Value(i)),
         );
-        // Cập nhật lại mảng dữ liệu tạm trên RAM (dùng copyWith để sinh ra bản sao có orderIndex mới)
         _notes[i] = _notes[i].copyWith(orderIndex: i);
       }
     }
@@ -252,6 +352,16 @@ class NotesViewModel extends ChangeNotifier {
     final note = _notes.firstWhere((n) => n.id == id);
     if (note.imagePaths == null) return;
     
+    // Xóa file vật lý trên ổ cứng
+    try {
+      final file = File(imagePathToRemove);
+      if (file.existsSync()) {
+        file.deleteSync();
+      }
+    } catch (e) {
+      // Bỏ qua nếu không thể xóa
+    }
+
     final List<String> currentImages = List<String>.from(note.imagePaths!);
     currentImages.remove(imagePathToRemove);
     
