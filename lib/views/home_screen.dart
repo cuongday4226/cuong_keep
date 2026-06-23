@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:reorderable_grid_view/reorderable_grid_view.dart';
+import 'package:flutter_reorderable_grid_view/widgets/widgets.dart';
 import 'package:go_router/go_router.dart';
 import '../view_models/notes_view_model.dart';
 import '../view_models/theme_view_model.dart';
@@ -778,6 +778,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverReorderableList(
                       itemCount: viewModel.pinnedNotes.length,
+                      findChildIndexCallback: (Key key) {
+                        if (key is ValueKey<String>) {
+                          final String val = key.value;
+                          if (val.startsWith('pinned_')) {
+                            final id = int.tryParse(val.replaceFirst('pinned_', ''));
+                            if (id != null) {
+                              final index = viewModel.pinnedNotes.indexWhere((n) => n.id == id);
+                              if (index >= 0) return index;
+                            }
+                          }
+                        }
+                        return null;
+                      },
                       onReorder: (oldIndex, newIndex) {
                         if (oldIndex < newIndex) newIndex -= 1;
                         viewModel.reorderPinnedNotes(oldIndex, newIndex);
@@ -800,23 +813,34 @@ class _HomeScreenState extends State<HomeScreen> {
                 slivers.add(
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: ReorderableSliverGridView.count(
-                      crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.85,
-                      dragStartDelay: Duration.zero,
-                      dragEnabled: !viewModel.isSelectionMode,
-                      onReorder: (oldIndex, newIndex) {
-                        viewModel.reorderPinnedNotes(oldIndex, newIndex);
-                      },
-                      children: List.generate(viewModel.pinnedNotes.length, (index) {
-                        final note = viewModel.pinnedNotes[index];
-                        return SizedBox(
-                          key: ValueKey('pinned_${note.id}'),
-                          child: RepaintBoundary(child: buildNoteCard(note)),
-                        );
-                      }),
+                    sliver: SliverToBoxAdapter(
+                      child: ReorderableBuilder(
+                        enableDraggable: !viewModel.isSelectionMode,
+                        longPressDelay: Duration.zero,
+                        onReorder: (List<Note> Function(List<Note>) reorderedListFunction) {
+                          viewModel.reorderPinnedNotesWithFunction(reorderedListFunction);
+                        },
+                        children: List.generate(viewModel.pinnedNotes.length, (index) {
+                          final note = viewModel.pinnedNotes[index];
+                          return Container(
+                            key: ValueKey('pinned_${note.id}'),
+                            child: RepaintBoundary(child: buildNoteCard(note)),
+                          );
+                        }),
+                        builder: (children) {
+                          return GridView(
+                            physics: const NeverScrollableScrollPhysics(),
+                            shrinkWrap: true,
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                              childAspectRatio: 0.85,
+                            ),
+                            children: children,
+                          );
+                        },
+                      ),
                     ),
                   ),
                 );
@@ -833,6 +857,19 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverReorderableList(
                       itemCount: viewModel.unpinnedNotes.length,
+                      findChildIndexCallback: (Key key) {
+                        if (key is ValueKey<String>) {
+                          final String val = key.value;
+                          if (val.startsWith('unpinned_')) {
+                            final id = int.tryParse(val.replaceFirst('unpinned_', ''));
+                            if (id != null) {
+                              final index = viewModel.unpinnedNotes.indexWhere((n) => n.id == id);
+                              if (index >= 0) return index;
+                            }
+                          }
+                        }
+                        return null;
+                      },
                       onReorder: (oldIndex, newIndex) {
                         if (oldIndex < newIndex) newIndex -= 1;
                         viewModel.reorderUnpinnedNotes(oldIndex, newIndex);
@@ -855,23 +892,34 @@ class _HomeScreenState extends State<HomeScreen> {
                 slivers.add(
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: ReorderableSliverGridView.count(
-                      crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.85,
-                      dragStartDelay: Duration.zero,
-                      dragEnabled: !viewModel.isSelectionMode,
-                      onReorder: (oldIndex, newIndex) {
-                        viewModel.reorderUnpinnedNotes(oldIndex, newIndex);
-                      },
-                      children: List.generate(viewModel.unpinnedNotes.length, (index) {
-                        final note = viewModel.unpinnedNotes[index];
-                        return SizedBox(
-                          key: ValueKey('unpinned_${note.id}'),
-                          child: RepaintBoundary(child: buildNoteCard(note)),
-                        );
-                      }),
+                    sliver: SliverToBoxAdapter(
+                      child: ReorderableBuilder(
+                        enableDraggable: !viewModel.isSelectionMode,
+                        longPressDelay: Duration.zero,
+                        onReorder: (List<Note> Function(List<Note>) reorderedListFunction) {
+                          viewModel.reorderUnpinnedNotesWithFunction(reorderedListFunction);
+                        },
+                        children: List.generate(viewModel.unpinnedNotes.length, (index) {
+                          final note = viewModel.unpinnedNotes[index];
+                          return Container(
+                            key: ValueKey('unpinned_${note.id}'),
+                            child: RepaintBoundary(child: buildNoteCard(note)),
+                          );
+                        }),
+                        builder: (children) {
+                          return GridView(
+                            physics: const NeverScrollableScrollPhysics(),
+                            shrinkWrap: true,
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                              childAspectRatio: 0.85,
+                            ),
+                            children: children,
+                          );
+                        },
+                      ),
                     ),
                   ),
                 );

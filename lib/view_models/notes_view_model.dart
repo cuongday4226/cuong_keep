@@ -543,6 +543,16 @@ class NotesViewModel extends ChangeNotifier {
     await _updateNotesOrder(pinnedNotes, unpinned);
   }
 
+  Future<void> reorderPinnedNotesWithFunction(List<Note> Function(List<Note>) reorderFunc) async {
+    final List<Note> pinned = reorderFunc(pinnedNotes);
+    await _updateNotesOrder(pinned, unpinnedNotes);
+  }
+
+  Future<void> reorderUnpinnedNotesWithFunction(List<Note> Function(List<Note>) reorderFunc) async {
+    final List<Note> unpinned = reorderFunc(unpinnedNotes);
+    await _updateNotesOrder(pinnedNotes, unpinned);
+  }
+
   Future<void> _updateNotesOrder(List<Note> pinned, List<Note> unpinned) async {
     final List<Note> notesToUpdate = [...pinned, ...unpinned];
 
@@ -551,17 +561,38 @@ class NotesViewModel extends ChangeNotifier {
     List<int> currentOrderIndices = notesToUpdate.map((n) => n.orderIndex).toList();
     currentOrderIndices.sort();
 
-    // Cập nhật orderIndex mới cho các note theo thứ tự
+    // 1. CẬP NHẬT BỘ NHỚ & GIAO DIỆN NGAY LẬP TỨC (Đồng bộ)
+    // Giúp UI không bị nháy dữ liệu hoặc khựng lại lúc thả chuột
+    final Map<int, int> newIndexMap = {};
+    for (int i = 0; i < notesToUpdate.length; i++) {
+      newIndexMap[notesToUpdate[i].id] = currentOrderIndices[i];
+    }
+    
+    _allNotes = _allNotes.map((note) {
+      if (newIndexMap.containsKey(note.id)) {
+        return note.copyWith(orderIndex: newIndexMap[note.id]!);
+      }
+      return note;
+    }).toList();
+    
+    _allNotes.sort((a, b) {
+      if (a.isPinned != b.isPinned) {
+        return a.isPinned ? -1 : 1; // Pinned ưu tiên lên trước
+      }
+      return a.orderIndex.compareTo(b.orderIndex); // Sắp xếp theo thứ tự orderIndex tăng dần
+    });
+
+    notifyListeners();
+
+    // 2. LƯU VÀO DATABASE DƯỚI NỀN
     for (int i = 0; i < notesToUpdate.length; i++) {
       final newOrderIndex = currentOrderIndices[i];
       if (notesToUpdate[i].orderIndex != newOrderIndex) {
-        await (_db.update(_db.notes)..where((t) => t.id.equals(notesToUpdate[i].id))).write(
+        (_db.update(_db.notes)..where((t) => t.id.equals(notesToUpdate[i].id))).write(
           NotesCompanion(orderIndex: drift.Value(newOrderIndex)),
         );
       }
     }
-
-    await _loadNotes();
   }
 
   // --- CÁC HÀM TÍNH NĂNG MỚI ---
