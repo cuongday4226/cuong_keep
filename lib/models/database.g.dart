@@ -149,6 +149,45 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   ).withConverter<List<ChecklistItem>?>($NotesTable.$converterchecklistItemsn);
+  static const VerificationMeta _isDeletedMeta = const VerificationMeta(
+    'isDeleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeleted = GeneratedColumn<bool>(
+    'is_deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _isArchivedMeta = const VerificationMeta(
+    'isArchived',
+  );
+  @override
+  late final GeneratedColumn<bool> isArchived = GeneratedColumn<bool>(
+    'is_archived',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_archived" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<List<String>?, String> tags =
+      GeneratedColumn<String>(
+        'tags',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<List<String>?>($NotesTable.$convertertagsn);
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -163,6 +202,9 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
     imagePaths,
     isChecklist,
     checklistItems,
+    isDeleted,
+    isArchived,
+    tags,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -240,6 +282,18 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
         ),
       );
     }
+    if (data.containsKey('is_deleted')) {
+      context.handle(
+        _isDeletedMeta,
+        isDeleted.isAcceptableOrUnknown(data['is_deleted']!, _isDeletedMeta),
+      );
+    }
+    if (data.containsKey('is_archived')) {
+      context.handle(
+        _isArchivedMeta,
+        isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
+      );
+    }
     return context;
   }
 
@@ -301,6 +355,20 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
           data['${effectivePrefix}checklist_items'],
         ),
       ),
+      isDeleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deleted'],
+      )!,
+      isArchived: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_archived'],
+      )!,
+      tags: $NotesTable.$convertertagsn.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}tags'],
+        ),
+      ),
     );
   }
 
@@ -319,6 +387,10 @@ class $NotesTable extends Notes with TableInfo<$NotesTable, Note> {
   $converterchecklistItemsn = NullAwareTypeConverter.wrap(
     $converterchecklistItems,
   );
+  static TypeConverter<List<String>, String> $convertertags =
+      const StringListConverter();
+  static TypeConverter<List<String>?, String?> $convertertagsn =
+      NullAwareTypeConverter.wrap($convertertags);
 }
 
 class Note extends DataClass implements Insertable<Note> {
@@ -334,6 +406,9 @@ class Note extends DataClass implements Insertable<Note> {
   final List<String>? imagePaths;
   final bool isChecklist;
   final List<ChecklistItem>? checklistItems;
+  final bool isDeleted;
+  final bool isArchived;
+  final List<String>? tags;
   const Note({
     required this.id,
     required this.title,
@@ -347,6 +422,9 @@ class Note extends DataClass implements Insertable<Note> {
     this.imagePaths,
     required this.isChecklist,
     this.checklistItems,
+    required this.isDeleted,
+    required this.isArchived,
+    this.tags,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -375,6 +453,11 @@ class Note extends DataClass implements Insertable<Note> {
         $NotesTable.$converterchecklistItemsn.toSql(checklistItems),
       );
     }
+    map['is_deleted'] = Variable<bool>(isDeleted);
+    map['is_archived'] = Variable<bool>(isArchived);
+    if (!nullToAbsent || tags != null) {
+      map['tags'] = Variable<String>($NotesTable.$convertertagsn.toSql(tags));
+    }
     return map;
   }
 
@@ -400,6 +483,9 @@ class Note extends DataClass implements Insertable<Note> {
       checklistItems: checklistItems == null && nullToAbsent
           ? const Value.absent()
           : Value(checklistItems),
+      isDeleted: Value(isDeleted),
+      isArchived: Value(isArchived),
+      tags: tags == null && nullToAbsent ? const Value.absent() : Value(tags),
     );
   }
 
@@ -423,6 +509,9 @@ class Note extends DataClass implements Insertable<Note> {
       checklistItems: serializer.fromJson<List<ChecklistItem>?>(
         json['checklistItems'],
       ),
+      isDeleted: serializer.fromJson<bool>(json['isDeleted']),
+      isArchived: serializer.fromJson<bool>(json['isArchived']),
+      tags: serializer.fromJson<List<String>?>(json['tags']),
     );
   }
   @override
@@ -441,6 +530,9 @@ class Note extends DataClass implements Insertable<Note> {
       'imagePaths': serializer.toJson<List<String>?>(imagePaths),
       'isChecklist': serializer.toJson<bool>(isChecklist),
       'checklistItems': serializer.toJson<List<ChecklistItem>?>(checklistItems),
+      'isDeleted': serializer.toJson<bool>(isDeleted),
+      'isArchived': serializer.toJson<bool>(isArchived),
+      'tags': serializer.toJson<List<String>?>(tags),
     };
   }
 
@@ -457,6 +549,9 @@ class Note extends DataClass implements Insertable<Note> {
     Value<List<String>?> imagePaths = const Value.absent(),
     bool? isChecklist,
     Value<List<ChecklistItem>?> checklistItems = const Value.absent(),
+    bool? isDeleted,
+    bool? isArchived,
+    Value<List<String>?> tags = const Value.absent(),
   }) => Note(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -472,6 +567,9 @@ class Note extends DataClass implements Insertable<Note> {
     checklistItems: checklistItems.present
         ? checklistItems.value
         : this.checklistItems,
+    isDeleted: isDeleted ?? this.isDeleted,
+    isArchived: isArchived ?? this.isArchived,
+    tags: tags.present ? tags.value : this.tags,
   );
   Note copyWithCompanion(NotesCompanion data) {
     return Note(
@@ -499,6 +597,11 @@ class Note extends DataClass implements Insertable<Note> {
       checklistItems: data.checklistItems.present
           ? data.checklistItems.value
           : this.checklistItems,
+      isDeleted: data.isDeleted.present ? data.isDeleted.value : this.isDeleted,
+      isArchived: data.isArchived.present
+          ? data.isArchived.value
+          : this.isArchived,
+      tags: data.tags.present ? data.tags.value : this.tags,
     );
   }
 
@@ -516,7 +619,10 @@ class Note extends DataClass implements Insertable<Note> {
           ..write('reminderAt: $reminderAt, ')
           ..write('imagePaths: $imagePaths, ')
           ..write('isChecklist: $isChecklist, ')
-          ..write('checklistItems: $checklistItems')
+          ..write('checklistItems: $checklistItems, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('isArchived: $isArchived, ')
+          ..write('tags: $tags')
           ..write(')'))
         .toString();
   }
@@ -535,6 +641,9 @@ class Note extends DataClass implements Insertable<Note> {
     imagePaths,
     isChecklist,
     checklistItems,
+    isDeleted,
+    isArchived,
+    tags,
   );
   @override
   bool operator ==(Object other) =>
@@ -551,7 +660,10 @@ class Note extends DataClass implements Insertable<Note> {
           other.reminderAt == this.reminderAt &&
           other.imagePaths == this.imagePaths &&
           other.isChecklist == this.isChecklist &&
-          other.checklistItems == this.checklistItems);
+          other.checklistItems == this.checklistItems &&
+          other.isDeleted == this.isDeleted &&
+          other.isArchived == this.isArchived &&
+          other.tags == this.tags);
 }
 
 class NotesCompanion extends UpdateCompanion<Note> {
@@ -567,6 +679,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
   final Value<List<String>?> imagePaths;
   final Value<bool> isChecklist;
   final Value<List<ChecklistItem>?> checklistItems;
+  final Value<bool> isDeleted;
+  final Value<bool> isArchived;
+  final Value<List<String>?> tags;
   const NotesCompanion({
     this.id = const Value.absent(),
     this.title = const Value.absent(),
@@ -580,6 +695,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.imagePaths = const Value.absent(),
     this.isChecklist = const Value.absent(),
     this.checklistItems = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.isArchived = const Value.absent(),
+    this.tags = const Value.absent(),
   });
   NotesCompanion.insert({
     this.id = const Value.absent(),
@@ -594,6 +712,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     this.imagePaths = const Value.absent(),
     this.isChecklist = const Value.absent(),
     this.checklistItems = const Value.absent(),
+    this.isDeleted = const Value.absent(),
+    this.isArchived = const Value.absent(),
+    this.tags = const Value.absent(),
   }) : title = Value(title),
        content = Value(content);
   static Insertable<Note> custom({
@@ -609,6 +730,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Expression<String>? imagePaths,
     Expression<bool>? isChecklist,
     Expression<String>? checklistItems,
+    Expression<bool>? isDeleted,
+    Expression<bool>? isArchived,
+    Expression<String>? tags,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -623,6 +747,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
       if (imagePaths != null) 'image_paths': imagePaths,
       if (isChecklist != null) 'is_checklist': isChecklist,
       if (checklistItems != null) 'checklist_items': checklistItems,
+      if (isDeleted != null) 'is_deleted': isDeleted,
+      if (isArchived != null) 'is_archived': isArchived,
+      if (tags != null) 'tags': tags,
     });
   }
 
@@ -639,6 +766,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
     Value<List<String>?>? imagePaths,
     Value<bool>? isChecklist,
     Value<List<ChecklistItem>?>? checklistItems,
+    Value<bool>? isDeleted,
+    Value<bool>? isArchived,
+    Value<List<String>?>? tags,
   }) {
     return NotesCompanion(
       id: id ?? this.id,
@@ -653,6 +783,9 @@ class NotesCompanion extends UpdateCompanion<Note> {
       imagePaths: imagePaths ?? this.imagePaths,
       isChecklist: isChecklist ?? this.isChecklist,
       checklistItems: checklistItems ?? this.checklistItems,
+      isDeleted: isDeleted ?? this.isDeleted,
+      isArchived: isArchived ?? this.isArchived,
+      tags: tags ?? this.tags,
     );
   }
 
@@ -699,6 +832,17 @@ class NotesCompanion extends UpdateCompanion<Note> {
         $NotesTable.$converterchecklistItemsn.toSql(checklistItems.value),
       );
     }
+    if (isDeleted.present) {
+      map['is_deleted'] = Variable<bool>(isDeleted.value);
+    }
+    if (isArchived.present) {
+      map['is_archived'] = Variable<bool>(isArchived.value);
+    }
+    if (tags.present) {
+      map['tags'] = Variable<String>(
+        $NotesTable.$convertertagsn.toSql(tags.value),
+      );
+    }
     return map;
   }
 
@@ -716,7 +860,10 @@ class NotesCompanion extends UpdateCompanion<Note> {
           ..write('reminderAt: $reminderAt, ')
           ..write('imagePaths: $imagePaths, ')
           ..write('isChecklist: $isChecklist, ')
-          ..write('checklistItems: $checklistItems')
+          ..write('checklistItems: $checklistItems, ')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('isArchived: $isArchived, ')
+          ..write('tags: $tags')
           ..write(')'))
         .toString();
   }
@@ -747,6 +894,9 @@ typedef $$NotesTableCreateCompanionBuilder =
       Value<List<String>?> imagePaths,
       Value<bool> isChecklist,
       Value<List<ChecklistItem>?> checklistItems,
+      Value<bool> isDeleted,
+      Value<bool> isArchived,
+      Value<List<String>?> tags,
     });
 typedef $$NotesTableUpdateCompanionBuilder =
     NotesCompanion Function({
@@ -762,6 +912,9 @@ typedef $$NotesTableUpdateCompanionBuilder =
       Value<List<String>?> imagePaths,
       Value<bool> isChecklist,
       Value<List<ChecklistItem>?> checklistItems,
+      Value<bool> isDeleted,
+      Value<bool> isArchived,
+      Value<List<String>?> tags,
     });
 
 class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
@@ -837,6 +990,22 @@ class $$NotesTableFilterComposer extends Composer<_$AppDatabase, $NotesTable> {
     column: $table.checklistItems,
     builder: (column) => ColumnWithTypeConverterFilters(column),
   );
+
+  ColumnFilters<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<List<String>?, List<String>, String>
+  get tags => $composableBuilder(
+    column: $table.tags,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
 }
 
 class $$NotesTableOrderingComposer
@@ -907,6 +1076,21 @@ class $$NotesTableOrderingComposer
     column: $table.checklistItems,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tags => $composableBuilder(
+    column: $table.tags,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$NotesTableAnnotationComposer
@@ -967,6 +1151,17 @@ class $$NotesTableAnnotationComposer
     column: $table.checklistItems,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get isDeleted =>
+      $composableBuilder(column: $table.isDeleted, builder: (column) => column);
+
+  GeneratedColumn<bool> get isArchived => $composableBuilder(
+    column: $table.isArchived,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<List<String>?, String> get tags =>
+      $composableBuilder(column: $table.tags, builder: (column) => column);
 }
 
 class $$NotesTableTableManager
@@ -1010,6 +1205,9 @@ class $$NotesTableTableManager
                 Value<bool> isChecklist = const Value.absent(),
                 Value<List<ChecklistItem>?> checklistItems =
                     const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<bool> isArchived = const Value.absent(),
+                Value<List<String>?> tags = const Value.absent(),
               }) => NotesCompanion(
                 id: id,
                 title: title,
@@ -1023,6 +1221,9 @@ class $$NotesTableTableManager
                 imagePaths: imagePaths,
                 isChecklist: isChecklist,
                 checklistItems: checklistItems,
+                isDeleted: isDeleted,
+                isArchived: isArchived,
+                tags: tags,
               ),
           createCompanionCallback:
               ({
@@ -1039,6 +1240,9 @@ class $$NotesTableTableManager
                 Value<bool> isChecklist = const Value.absent(),
                 Value<List<ChecklistItem>?> checklistItems =
                     const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
+                Value<bool> isArchived = const Value.absent(),
+                Value<List<String>?> tags = const Value.absent(),
               }) => NotesCompanion.insert(
                 id: id,
                 title: title,
@@ -1052,6 +1256,9 @@ class $$NotesTableTableManager
                 imagePaths: imagePaths,
                 isChecklist: isChecklist,
                 checklistItems: checklistItems,
+                isDeleted: isDeleted,
+                isArchived: isArchived,
+                tags: tags,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

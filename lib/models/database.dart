@@ -96,15 +96,20 @@ class Notes extends Table {
   // (Schema version 5): Các cột cho tính năng Danh sách (Checklist)
   BoolColumn get isChecklist => boolean().withDefault(const Constant(false))(); // Xác định có phải là checklist không
   TextColumn get checklistItems => text().map(const ChecklistConverter()).nullable()(); // Mảng các mục checklist
+
+  // (Schema version 6): Các cột cho Navigation Drawer
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))(); // Cờ thùng rác
+  BoolColumn get isArchived => boolean().withDefault(const Constant(false))(); // Cờ lưu trữ
+  TextColumn get tags => text().map(const StringListConverter()).nullable()(); // Danh sách nhãn
 }
 
 @DriftDatabase(tables: [Notes])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
-  // Tăng schemaVersion lên 5 vì ta vừa thêm các cột cho tính năng Checklist
+  // Tăng schemaVersion lên 6 vì ta vừa thêm các cột cho tính năng Navigation Drawer
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   // Xử lý di chuyển dữ liệu (Migration) khi nâng cấp phiên bản Database
   @override
@@ -132,6 +137,12 @@ class AppDatabase extends _$AppDatabase {
           // Nâng cấp từ version 4 lên 5: Thêm tính năng Checklist
           await m.addColumn(notes, notes.isChecklist);
           await m.addColumn(notes, notes.checklistItems);
+        }
+        if (from < 6) {
+          // Nâng cấp từ version 5 lên 6: Thêm Thùng rác, Lưu trữ và Nhãn
+          await m.addColumn(notes, notes.isDeleted);
+          await m.addColumn(notes, notes.isArchived);
+          await m.addColumn(notes, notes.tags);
         }
       },
     );

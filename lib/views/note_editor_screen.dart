@@ -47,6 +47,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   bool _isChecklist = false;
   List<ChecklistItem> _checklistItems = [];
 
+  // Biến cho tính năng Nhãn
+  List<String> _tags = [];
+
   // Danh sách các màu nền để người dùng chọn (chữ ".shade100" làm cho màu nhạt đi, đẹp mắt hơn cho nền)
   final List<Color> _colors = [
     Colors.transparent, // Không màu (trong suốt - mặc định)
@@ -102,6 +105,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         _imagePaths = note.imagePaths != null ? List<String>.from(note.imagePaths!) : []; // Cập nhật danh sách ảnh
         _isChecklist = note.isChecklist;
         _checklistItems = note.checklistItems != null ? List<ChecklistItem>.from(note.checklistItems!) : [];
+        _tags = note.tags != null ? List<String>.from(note.tags!) : [];
       });
     } catch (e) {
       // Không tìm thấy ghi chú (tránh lỗi)
@@ -143,10 +147,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     try {
       // Nếu là ghi chú đã có từ trước (Đang sửa)
       if (_existingNote != null) {
-        await viewModel.updateNote(_existingNote!.id, title, content, _selectedColor, pathsToSave, _isChecklist, itemsToSave);
+        await viewModel.updateNote(_existingNote!.id, title, content, _selectedColor, pathsToSave, _isChecklist, itemsToSave, _tags);
       } else {
         // Nếu là ghi chú mới
-        await viewModel.addNote(title, content, _selectedColor, pathsToSave, _isChecklist, itemsToSave);
+        await viewModel.addNote(title, content, _selectedColor, pathsToSave, _isChecklist, itemsToSave, _tags);
       }
     } catch (e) {
       if (mounted) {
@@ -161,10 +165,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     }
   }
 
-  // Hàm xóa ghi chú
-  void _deleteNote() {
+  // Hàm xóa ghi chú (chuyển vào thùng rác)
+  void _moveToTrash() {
     if (_existingNote != null) {
-      context.read<NotesViewModel>().deleteNote(_existingNote!.id);
+      context.read<NotesViewModel>().moveToTrash(_existingNote!.id);
     }
     context.pop();
   }
@@ -335,11 +339,18 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 tooltip: _isChecklist ? 'Ẩn hộp kiểm' : 'Hiển thị hộp kiểm',
                 onPressed: _toggleChecklistMode,
               ),
+              // Nút gắn nhãn
+              IconButton(
+                icon: const Icon(Icons.label_outline_rounded),
+                tooltip: 'Gắn nhãn',
+                onPressed: _showTagsDialog,
+              ),
               // Chỉ hiển thị nút Xóa (thùng rác) khi đây là bản sửa của ghi chú cũ
               if (_existingNote != null)
                 IconButton(
                   icon: const Icon(Icons.delete_outline_rounded),
-                  onPressed: _deleteNote,
+                  tooltip: 'Xóa',
+                  onPressed: _moveToTrash,
                 ),
               const SizedBox(width: 8),
             ],
@@ -636,6 +647,99 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               );
             },
           ),
+        );
+      },
+    );
+  }
+
+  // Hàm hiển thị Cửa sổ gắn nhãn
+  void _showTagsDialog() {
+    final viewModel = context.read<NotesViewModel>();
+    final allTags = viewModel.allTags.toList();
+    final TextEditingController newTagController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Gắn nhãn'),
+              content: SizedBox(
+                width: 300,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Ô nhập nhãn mới
+                    TextField(
+                      controller: newTagController,
+                      decoration: InputDecoration(
+                        hintText: 'Nhập tên nhãn mới...',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () {
+                            final text = newTagController.text.trim();
+                            if (text.isNotEmpty) {
+                              setDialogState(() {
+                                if (!allTags.contains(text)) allTags.add(text);
+                                if (!_tags.contains(text)) _tags.add(text);
+                                newTagController.clear();
+                              });
+                              // Cập nhật lại UI màn hình editor phía sau
+                              setState(() {});
+                            }
+                          },
+                        ),
+                      ),
+                      onSubmitted: (text) {
+                        text = text.trim();
+                        if (text.isNotEmpty) {
+                          setDialogState(() {
+                            if (!allTags.contains(text)) allTags.add(text);
+                            if (!_tags.contains(text)) _tags.add(text);
+                            newTagController.clear();
+                          });
+                          setState(() {});
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // Danh sách các nhãn (có thể lướt)
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: allTags.length,
+                        itemBuilder: (context, index) {
+                          final tag = allTags[index];
+                          final isChecked = _tags.contains(tag);
+                          return CheckboxListTile(
+                            title: Text(tag),
+                            value: isChecked,
+                            onChanged: (bool? value) {
+                              setDialogState(() {
+                                if (value == true) {
+                                  _tags.add(tag);
+                                } else {
+                                  _tags.remove(tag);
+                                }
+                              });
+                              setState(() {});
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Xong'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

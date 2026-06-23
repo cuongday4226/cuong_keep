@@ -21,8 +21,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Biến lưu trữ mục nào đang được chọn trong ngăn kéo (0 = Ghi chú, mặc định)
-  int _selectedIndex = 0;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -39,14 +37,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       // --- THANH TRƯỢT BÊN TRÁI (NAVIGATION DRAWER) ---
       drawer: NavigationDrawer(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (int index) {
-          setState(() {
-            _selectedIndex = index;
-          });
-          // Tự động đóng Drawer sau khi chọn (trên thiết bị hẹp)
-          Navigator.pop(context);
-        },
+        selectedIndex: _getDrawerIndex(notesVM),
+        onDestinationSelected: (int index) => _onDestinationSelected(index, notesVM),
         children: [
           const Padding(
             padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
@@ -65,16 +57,27 @@ class _HomeScreenState extends State<HomeScreen> {
             selectedIcon: Icon(Icons.notifications),
             label: Text('Lời nhắc'),
           ),
-          const Divider(indent: 28, endIndent: 28),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
-            child: Text(
-              'Nhãn',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          if (notesVM.allTags.isNotEmpty) ...[
+            const Divider(indent: 28, endIndent: 28),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
+              child: Text(
+                'Nhãn',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
             ),
-          ),
-          // Có thể thêm các mục Nhãn ở đây sau này
+            ...notesVM.allTags.map((tag) => NavigationDrawerDestination(
+              icon: const Icon(Icons.label_outline),
+              selectedIcon: const Icon(Icons.label),
+              label: Text(tag),
+            )),
+          ],
           const Divider(indent: 28, endIndent: 28),
+          const NavigationDrawerDestination(
+            icon: Icon(Icons.archive_outlined),
+            selectedIcon: Icon(Icons.archive),
+            label: Text('Lưu trữ'),
+          ),
           const NavigationDrawerDestination(
             icon: Icon(Icons.delete_outline),
             selectedIcon: Icon(Icons.delete),
@@ -94,15 +97,40 @@ class _HomeScreenState extends State<HomeScreen> {
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           actions: [
-            IconButton(
-              icon: const Icon(Icons.push_pin_outlined),
-              tooltip: 'Ghim / Bỏ ghim',
-              onPressed: () => notesVM.togglePinSelectedNotes(),
-            ),
+            if (notesVM.currentFilter != NoteFilter.trash)
+              IconButton(
+                icon: const Icon(Icons.push_pin_outlined),
+                tooltip: 'Ghim / Bỏ ghim',
+                onPressed: () => notesVM.togglePinSelectedNotes(),
+              ),
+            if (notesVM.currentFilter == NoteFilter.trash)
+              IconButton(
+                icon: const Icon(Icons.restore),
+                tooltip: 'Khôi phục',
+                onPressed: () => notesVM.restoreSelectedNotes(),
+              ),
+            if (notesVM.currentFilter != NoteFilter.archive && notesVM.currentFilter != NoteFilter.trash)
+              IconButton(
+                icon: const Icon(Icons.archive_outlined),
+                tooltip: 'Lưu trữ',
+                onPressed: () => notesVM.toggleArchiveSelectedNotes(),
+              ),
+            if (notesVM.currentFilter == NoteFilter.archive)
+              IconButton(
+                icon: const Icon(Icons.unarchive_outlined),
+                tooltip: 'Bỏ lưu trữ',
+                onPressed: () => notesVM.toggleArchiveSelectedNotes(),
+              ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              tooltip: 'Xóa các mục đã chọn',
-              onPressed: () => notesVM.deleteSelectedNotes(),
+              tooltip: notesVM.currentFilter == NoteFilter.trash ? 'Xóa vĩnh viễn' : 'Xóa',
+              onPressed: () {
+                if (notesVM.currentFilter == NoteFilter.trash) {
+                  notesVM.permanentlyDeleteSelectedNotes();
+                } else {
+                  notesVM.moveSelectedNotesToTrash();
+                }
+              },
             ),
           ],
         )
@@ -175,20 +203,55 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 8), // Khoảng trống nhỏ bên phải cùng
         ],
       ),
-      // Dùng IndexedStack để hiển thị giao diện tùy theo mục Drawer được chọn
-      // Nếu _selectedIndex == 0 (Ghi chú), hiện Lưới ghi chú. Còn lại hiện dòng chữ Tạm trống.
-      body: _selectedIndex == 0 ? _buildNotesGrid() : _buildPlaceholderScreen(),
+      // Hiển thị giao diện chính dựa trên bộ lọc
+      body: _buildNotesGrid(notesVM),
     );
   }
 
-  // Widget riêng dành cho giao diện chính của phần Ghi chú (đã làm từ trước)
-  Widget _buildNotesGrid() {
+  int _getDrawerIndex(NotesViewModel notesVM) {
+    if (notesVM.currentFilter == NoteFilter.notes) return 0;
+    if (notesVM.currentFilter == NoteFilter.reminders) return 1;
+    
+    final tags = notesVM.allTags;
+    if (notesVM.currentFilter == NoteFilter.label) {
+      int tagIndex = tags.indexOf(notesVM.currentLabel ?? '');
+      if (tagIndex != -1) return 2 + tagIndex;
+    }
+    
+    if (notesVM.currentFilter == NoteFilter.archive) return 2 + tags.length;
+    if (notesVM.currentFilter == NoteFilter.trash) return 2 + tags.length + 1;
+    
+    return 0;
+  }
+
+  void _onDestinationSelected(int index, NotesViewModel notesVM) {
+    final tags = notesVM.allTags;
+    if (index == 0) {
+      notesVM.setFilter(NoteFilter.notes);
+    } else if (index == 1) {
+      notesVM.setFilter(NoteFilter.reminders);
+    } else if (index >= 2 && index < 2 + tags.length) {
+      notesVM.setFilter(NoteFilter.label, label: tags[index - 2]);
+    } else if (index == 2 + tags.length) {
+      notesVM.setFilter(NoteFilter.archive);
+    } else if (index == 2 + tags.length + 1) {
+      notesVM.setFilter(NoteFilter.trash);
+    }
+    Navigator.pop(context); // Tự động đóng Drawer
+  }
+
+  // Widget riêng dành cho giao diện chính của phần Ghi chú
+  Widget _buildNotesGrid(NotesViewModel notesVM) {
+    // Chỉ cho phép tạo ghi chú mới ở màn hình Chính và màn hình Nhãn
+    final canCreateNote = notesVM.currentFilter == NoteFilter.notes || notesVM.currentFilter == NoteFilter.label;
+
     return Column(
       children: [
-        // --- THANH TẠO GHI CHÚ GIỐNG GOOGLE KEEP ---
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-          child: Center(
+        if (canCreateNote)
+          // --- THANH TẠO GHI CHÚ GIỐNG GOOGLE KEEP ---
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+            child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 600), // Giới hạn chiều rộng của thanh tạo ghi chú
               child: Card(
@@ -248,16 +311,24 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+        if (notesVM.currentFilter == NoteFilter.trash)
+          _buildEmptyTrashButton(notesVM),
         // --- PHẦN LƯỚI DANH SÁCH GHI CHÚ ---
         Expanded(
           child: Consumer<NotesViewModel>(
             builder: (context, viewModel, child) {
               if (viewModel.notes.isEmpty) {
-                return const Center(
+                String emptyMsg = 'Không có ghi chú nào.';
+                if (viewModel.currentFilter == NoteFilter.notes) emptyMsg = 'Ghi chú bạn thêm sẽ xuất hiện ở đây.';
+                if (viewModel.currentFilter == NoteFilter.reminders) emptyMsg = 'Ghi chú có lời nhắc sẽ xuất hiện ở đây.';
+                if (viewModel.currentFilter == NoteFilter.archive) emptyMsg = 'Ghi chú được lưu trữ sẽ xuất hiện ở đây.';
+                if (viewModel.currentFilter == NoteFilter.trash) emptyMsg = 'Thùng rác trống.';
+                
+                return Center(
                   child: Text(
-                    'Không có ghi chú nào.\nThêm ghi chú ở thanh bên trên!',
+                    emptyMsg,
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                    style: const TextStyle(fontSize: 16, color: Colors.grey),
                   ),
                 );
               }
@@ -535,6 +606,25 @@ class _HomeScreenState extends State<HomeScreen> {
                                             ),
                                           ),
                                         ),
+                                      ),
+                                    ),
+                                  
+                                  // Hiển thị nhãn
+                                  if (note.tags != null && note.tags!.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        children: note.tags!.map((tag) => Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                            borderRadius: BorderRadius.circular(16),
+                                            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant, width: 0.5),
+                                          ),
+                                          child: Text(tag, style: const TextStyle(fontSize: 11)),
+                                        )).toList(),
                                       ),
                                     ),
                                 ],
@@ -847,24 +937,39 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Widget hiển thị chỗ trống cho các màn hình chưa phát triển (Lời nhắc, Thùng rác, Lưu trữ...)
-  Widget _buildPlaceholderScreen() {
-    String title = '';
-    switch (_selectedIndex) {
-      case 1:
-        title = 'Màn hình Lời nhắc';
-        break;
-      case 2:
-        title = 'Màn hình Lưu trữ';
-        break;
-      case 3:
-        title = 'Màn hình Thùng rác';
-        break;
-    }
-    return Center(
-      child: Text(
-        '$title đang được xây dựng...',
-        style: const TextStyle(fontSize: 18, color: Colors.grey),
+  // Nút Dọn sạch thùng rác (Chỉ hiển thị ở màn hình Thùng rác)
+  Widget _buildEmptyTrashButton(NotesViewModel notesVM) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: ElevatedButton.icon(
+        onPressed: notesVM.notes.isEmpty ? null : () {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Dọn sạch thùng rác?'),
+              content: const Text('Tất cả ghi chú trong thùng rác sẽ bị xóa vĩnh viễn và không thể khôi phục.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Hủy'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    notesVM.emptyTrash();
+                  },
+                  child: const Text('Dọn sạch', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          );
+        },
+        icon: const Icon(Icons.delete_forever),
+        label: const Text('Dọn sạch thùng rác'),
+        style: ElevatedButton.styleFrom(
+          foregroundColor: Theme.of(context).colorScheme.onErrorContainer,
+          backgroundColor: Theme.of(context).colorScheme.errorContainer,
+        ),
       ),
     );
   }
