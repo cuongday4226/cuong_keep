@@ -6,6 +6,7 @@ import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import 'package:go_router/go_router.dart';
 import '../view_models/notes_view_model.dart';
 import '../view_models/theme_view_model.dart';
+import '../widgets/edit_labels_dialog.dart';
 import '../utils/color_utils.dart';
 import '../utils/string_utils.dart';
 import '../models/database.dart';
@@ -72,6 +73,11 @@ class _HomeScreenState extends State<HomeScreen> {
               label: Text(tag),
             )),
           ],
+          const NavigationDrawerDestination(
+            icon: Icon(Icons.edit_outlined),
+            selectedIcon: Icon(Icons.edit),
+            label: Text('Chỉnh sửa nhãn'),
+          ),
           const Divider(indent: 28, endIndent: 28),
           const NavigationDrawerDestination(
             icon: Icon(Icons.archive_outlined),
@@ -120,6 +126,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: const Icon(Icons.unarchive_outlined),
                 tooltip: 'Bỏ lưu trữ',
                 onPressed: () => notesVM.toggleArchiveSelectedNotes(),
+              ),
+            if (notesVM.currentFilter != NoteFilter.trash)
+              IconButton(
+                icon: const Icon(Icons.label_outline),
+                tooltip: 'Gắn nhãn',
+                onPressed: () => _showTagsDialogForSelection(notesVM),
               ),
             IconButton(
               icon: const Icon(Icons.delete_outline),
@@ -218,8 +230,8 @@ class _HomeScreenState extends State<HomeScreen> {
       if (tagIndex != -1) return 2 + tagIndex;
     }
     
-    if (notesVM.currentFilter == NoteFilter.archive) return 2 + tags.length;
-    if (notesVM.currentFilter == NoteFilter.trash) return 2 + tags.length + 1;
+    if (notesVM.currentFilter == NoteFilter.archive) return 2 + tags.length + 1;
+    if (notesVM.currentFilter == NoteFilter.trash) return 2 + tags.length + 2;
     
     return 0;
   }
@@ -233,8 +245,12 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (index >= 2 && index < 2 + tags.length) {
       notesVM.setFilter(NoteFilter.label, label: tags[index - 2]);
     } else if (index == 2 + tags.length) {
-      notesVM.setFilter(NoteFilter.archive);
+      Navigator.pop(context); // Tự động đóng Drawer
+      showDialog(context: context, builder: (_) => const EditLabelsDialog());
+      return; // Không đổi filter
     } else if (index == 2 + tags.length + 1) {
+      notesVM.setFilter(NoteFilter.archive);
+    } else if (index == 2 + tags.length + 2) {
       notesVM.setFilter(NoteFilter.trash);
     }
     Navigator.pop(context); // Tự động đóng Drawer
@@ -763,6 +779,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     sliver: SliverReorderableList(
                       itemCount: viewModel.pinnedNotes.length,
                       onReorder: (oldIndex, newIndex) {
+                        if (oldIndex < newIndex) newIndex -= 1;
                         viewModel.reorderPinnedNotes(oldIndex, newIndex);
                       },
                       itemBuilder: (context, index) {
@@ -770,7 +787,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         return ReorderableDragStartListener(
                           key: ValueKey('pinned_${note.id}'),
                           index: index,
-                          child: buildNoteCard(note),
+                          enabled: !viewModel.isSelectionMode,
+                          child: RepaintBoundary(child: buildNoteCard(note)),
                         );
                       },
                     ),
@@ -788,6 +806,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisSpacing: 12,
                       childAspectRatio: 0.85,
                       dragStartDelay: Duration.zero,
+                      dragEnabled: !viewModel.isSelectionMode,
                       onReorder: (oldIndex, newIndex) {
                         viewModel.reorderPinnedNotes(oldIndex, newIndex);
                       },
@@ -795,7 +814,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         final note = viewModel.pinnedNotes[index];
                         return SizedBox(
                           key: ValueKey('pinned_${note.id}'),
-                          child: buildNoteCard(note),
+                          child: RepaintBoundary(child: buildNoteCard(note)),
                         );
                       }),
                     ),
@@ -815,6 +834,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     sliver: SliverReorderableList(
                       itemCount: viewModel.unpinnedNotes.length,
                       onReorder: (oldIndex, newIndex) {
+                        if (oldIndex < newIndex) newIndex -= 1;
                         viewModel.reorderUnpinnedNotes(oldIndex, newIndex);
                       },
                       itemBuilder: (context, index) {
@@ -822,7 +842,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         return ReorderableDragStartListener(
                           key: ValueKey('unpinned_${note.id}'),
                           index: index,
-                          child: buildNoteCard(note),
+                          enabled: !viewModel.isSelectionMode,
+                          child: RepaintBoundary(child: buildNoteCard(note)),
                         );
                       },
                     ),
@@ -840,6 +861,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisSpacing: 12,
                       childAspectRatio: 0.85,
                       dragStartDelay: Duration.zero,
+                      dragEnabled: !viewModel.isSelectionMode,
                       onReorder: (oldIndex, newIndex) {
                         viewModel.reorderUnpinnedNotes(oldIndex, newIndex);
                       },
@@ -847,7 +869,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         final note = viewModel.unpinnedNotes[index];
                         return SizedBox(
                           key: ValueKey('unpinned_${note.id}'),
-                          child: buildNoteCard(note),
+                          child: RepaintBoundary(child: buildNoteCard(note)),
                         );
                       }),
                     ),
@@ -1057,6 +1079,97 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   child: const Text('Đóng'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showTagsDialogForSelection(NotesViewModel viewModel) {
+    final allTags = viewModel.allTags.toList();
+    final TextEditingController newTagController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Gắn nhãn'),
+              content: SizedBox(
+                width: 300,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Ô nhập nhãn mới
+                    TextField(
+                      controller: newTagController,
+                      decoration: InputDecoration(
+                        hintText: 'Nhập tên nhãn mới...',
+                        suffixIcon: IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () {
+                            final text = newTagController.text.trim();
+                            if (text.isNotEmpty) {
+                              setDialogState(() {
+                                if (!allTags.contains(text)) {
+                                  allTags.add(text);
+                                  viewModel.addGlobalLabel(text);
+                                }
+                                viewModel.toggleTagForSelectedNotes(text, true);
+                                newTagController.clear();
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                      onSubmitted: (text) {
+                        text = text.trim();
+                        if (text.isNotEmpty) {
+                          setDialogState(() {
+                            if (!allTags.contains(text)) {
+                              allTags.add(text);
+                              viewModel.addGlobalLabel(text);
+                            }
+                            viewModel.toggleTagForSelectedNotes(text, true);
+                            newTagController.clear();
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    // Danh sách các nhãn
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: allTags.length,
+                        itemBuilder: (context, index) {
+                          final tag = allTags[index];
+                          final state = viewModel.getTagStateForSelectedNotes(tag);
+                          
+                          return CheckboxListTile(
+                            title: Text(tag),
+                            value: state,
+                            tristate: true,
+                            onChanged: (bool? newValue) {
+                              setDialogState(() {
+                                viewModel.toggleTagForSelectedNotes(tag, state);
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Xong'),
                 ),
               ],
             );

@@ -5,6 +5,7 @@ import 'dart:io';
 import '../models/database.dart';
 import '../services/notification_service.dart';
 import '../utils/string_utils.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum NoteFilter { notes, reminders, archive, trash, label }
 
@@ -58,14 +59,99 @@ class NotesViewModel extends ChangeNotifier {
   List<Note> get unpinnedNotes => _filteredNotes.where((n) => !n.isPinned).toList();
 
   // Danh sách TẤT CẢ các nhãn có trong hệ thống
-  List<String> get allTags {
+  List<String> _globalLabels = [];
+  List<String> get allTags => List.unmodifiable(_globalLabels);
+
+  Future<void> _initLabels() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String>? savedLabels = prefs.getStringList('global_labels');
+    
     Set<String> tags = {};
+    if (savedLabels != null) {
+      tags.addAll(savedLabels);
+    }
+
+    // Tự động quét lại toàn bộ các nhãn đang tồn tại trong ghi chú (đề phòng trường hợp nhãn chưa được lưu vào global)
     for (var note in _allNotes) {
       if (note.tags != null) {
         tags.addAll(note.tags!);
       }
     }
-    return tags.toList()..sort();
+
+    _globalLabels = tags.toList()..sort();
+    await prefs.setStringList('global_labels', _globalLabels);
+    notifyListeners();
+  }
+
+  Future<void> addGlobalLabel(String label) async {
+    final text = label.trim();
+    if (text.isEmpty || _globalLabels.contains(text)) return;
+    
+    _globalLabels.add(text);
+    _globalLabels.sort();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('global_labels', _globalLabels);
+    notifyListeners();
+  }
+
+  Future<void> deleteGlobalLabel(String label) async {
+    if (!_globalLabels.contains(label)) return;
+    
+    _globalLabels.remove(label);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('global_labels', _globalLabels);
+
+    // Xóa nhãn này khỏi tất cả ghi chú
+    for (var note in _allNotes) {
+      if (note.tags != null && note.tags!.contains(label)) {
+        final newTags = List<String>.from(note.tags!);
+        newTags.remove(label);
+        await updateNote(note.id, note.title, note.content, note.color, note.imagePaths, note.isChecklist, note.checklistItems, newTags);
+      }
+    }
+    
+    // Nếu đang lọc theo nhãn vừa xóa, chuyển về ghi chú chính
+    if (_currentFilter == NoteFilter.label && _currentLabel == label) {
+      setFilter(NoteFilter.notes);
+    } else {
+      notifyListeners();
+    }
+  }
+
+  Future<void> renameGlobalLabel(String oldLabel, String newLabel) async {
+    oldLabel = oldLabel.trim();
+    newLabel = newLabel.trim();
+    if (newLabel.isEmpty || oldLabel == newLabel || !_globalLabels.contains(oldLabel)) return;
+
+    if (_globalLabels.contains(newLabel)) {
+      // Nếu tên mới đã tồn tại, ta gộp nhãn: Xóa nhãn cũ
+      _globalLabels.remove(oldLabel);
+    } else {
+      // Đổi tên
+      final index = _globalLabels.indexOf(oldLabel);
+      _globalLabels[index] = newLabel;
+      _globalLabels.sort();
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('global_labels', _globalLabels);
+
+    // Cập nhật nhãn mới cho tất cả ghi chú mang nhãn cũ
+    for (var note in _allNotes) {
+      if (note.tags != null && note.tags!.contains(oldLabel)) {
+        final newTags = List<String>.from(note.tags!);
+        newTags.remove(oldLabel);
+        if (!newTags.contains(newLabel)) newTags.add(newLabel);
+        await updateNote(note.id, note.title, note.content, note.color, note.imagePaths, note.isChecklist, note.checklistItems, newTags);
+      }
+    }
+
+    // Nếu đang xem nhãn cũ, chuyển sang xem nhãn mới
+    if (_currentFilter == NoteFilter.label && _currentLabel == oldLabel) {
+      setFilter(NoteFilter.label, label: newLabel);
+    } else {
+      notifyListeners();
+    }
   }
 
   String get searchQuery => _searchQuery;
@@ -76,7 +162,9 @@ class NotesViewModel extends ChangeNotifier {
   bool get isSelectionMode => _selectedNoteIds.isNotEmpty;
 
   NotesViewModel(this._db) {
-    _loadNotes();
+    _loadNotes().then((_) {
+      _initLabels();
+    });
     _startReminderTimer();
   }
 
@@ -252,6 +340,54 @@ class NotesViewModel extends ChangeNotifier {
     await _loadNotes();
   }
 
+  // --- HÀM CHO NHÃN TRONG CHẾ ĐỘ ĐA CHỌN ---
+
+  bool? getTagStateForSelectedNotes(String tag) {
+    if (_selectedNoteIds.isEmpty) return false;
+    
+    int count = 0;
+    for (int id in _selectedNoteIds) {
+      final note = _allNotes.firstWhere((n) => n.id == id);
+      if (note.tags != null && note.tags!.contains(tag)) {
+        count++;
+      }
+    }
+    
+    if (count == 0) return false;
+    if (count == _selectedNoteIds.length) return true;
+    return null; // Indeterminate (Chỉ có một số ghi chú có nhãn này)
+  }
+
+  Future<void> toggleTagForSelectedNotes(String tag, bool? currentState) async {
+    if (_selectedNoteIds.isEmpty) return;
+
+    // Nếu đang là null (indeterminate) hoặc false, ta sẽ gắn nhãn cho toàn bộ (đổi thành true)
+    // Nếu đang là true, ta sẽ gỡ nhãn khỏi toàn bộ (đổi thành false)
+    bool shouldAdd = currentState != true;
+
+    for (int id in _selectedNoteIds) {
+      final note = _allNotes.firstWhere((n) => n.id == id);
+      List<String> currentTags = note.tags != null ? List<String>.from(note.tags!) : [];
+      bool changed = false;
+
+      if (shouldAdd && !currentTags.contains(tag)) {
+        currentTags.add(tag);
+        changed = true;
+      } else if (!shouldAdd && currentTags.contains(tag)) {
+        currentTags.remove(tag);
+        changed = true;
+      }
+
+      if (changed) {
+        await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
+          NotesCompanion(tags: drift.Value(currentTags))
+        );
+      }
+    }
+    
+    await _loadNotes();
+  }
+
   Future<void> toggleArchiveSelectedNotes() async {
     if (_selectedNoteIds.isEmpty) return;
     bool allArchived = true;
@@ -388,7 +524,6 @@ class NotesViewModel extends ChangeNotifier {
   }
 
   Future<void> reorderPinnedNotes(int oldIndex, int newIndex) async {
-    if (oldIndex < newIndex) newIndex -= 1;
     if (oldIndex == newIndex) return;
 
     final List<Note> pinned = pinnedNotes;
@@ -399,7 +534,6 @@ class NotesViewModel extends ChangeNotifier {
   }
 
   Future<void> reorderUnpinnedNotes(int oldIndex, int newIndex) async {
-    if (oldIndex < newIndex) newIndex -= 1;
     if (oldIndex == newIndex) return;
 
     final List<Note> unpinned = unpinnedNotes;
@@ -410,17 +544,24 @@ class NotesViewModel extends ChangeNotifier {
   }
 
   Future<void> _updateNotesOrder(List<Note> pinned, List<Note> unpinned) async {
-    _allNotes = [...pinned, ...unpinned];
+    final List<Note> notesToUpdate = [...pinned, ...unpinned];
 
-    // Cập nhật orderIndex cho tất cả
-    for (int i = 0; i < _allNotes.length; i++) {
-      if (_allNotes[i].orderIndex != i) {
-        await (_db.update(_db.notes)..where((t) => t.id.equals(_allNotes[i].id))).write(
-          NotesCompanion(orderIndex: drift.Value(i)),
+    // Lấy danh sách các orderIndex hiện tại của những note này và sắp xếp tăng dần
+    // Để giữ nguyên dải orderIndex của nhóm note này, không đè lên orderIndex của archived/trash
+    List<int> currentOrderIndices = notesToUpdate.map((n) => n.orderIndex).toList();
+    currentOrderIndices.sort();
+
+    // Cập nhật orderIndex mới cho các note theo thứ tự
+    for (int i = 0; i < notesToUpdate.length; i++) {
+      final newOrderIndex = currentOrderIndices[i];
+      if (notesToUpdate[i].orderIndex != newOrderIndex) {
+        await (_db.update(_db.notes)..where((t) => t.id.equals(notesToUpdate[i].id))).write(
+          NotesCompanion(orderIndex: drift.Value(newOrderIndex)),
         );
-        _allNotes[i] = _allNotes[i].copyWith(orderIndex: i);
       }
     }
+
+    await _loadNotes();
   }
 
   // --- CÁC HÀM TÍNH NĂNG MỚI ---

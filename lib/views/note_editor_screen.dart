@@ -681,7 +681,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                             final text = newTagController.text.trim();
                             if (text.isNotEmpty) {
                               setDialogState(() {
-                                if (!allTags.contains(text)) allTags.add(text);
+                                if (!allTags.contains(text)) {
+                                  allTags.add(text);
+                                  viewModel.addGlobalLabel(text);
+                                }
                                 if (!_tags.contains(text)) _tags.add(text);
                                 newTagController.clear();
                               });
@@ -695,7 +698,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                         text = text.trim();
                         if (text.isNotEmpty) {
                           setDialogState(() {
-                            if (!allTags.contains(text)) allTags.add(text);
+                            if (!allTags.contains(text)) {
+                              allTags.add(text);
+                              viewModel.addGlobalLabel(text);
+                            }
                             if (!_tags.contains(text)) _tags.add(text);
                             newTagController.clear();
                           });
