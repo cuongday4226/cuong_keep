@@ -52,6 +52,7 @@ dependencies:
   tray_manager: ^0.5.3
   scribble: ^0.10.0+1
   archive: ^4.0.9
+  local_notifier: ^0.1.6
 
 dev_dependencies:
   flutter_test:

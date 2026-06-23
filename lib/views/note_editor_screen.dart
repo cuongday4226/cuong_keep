@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:io';
+import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 import 'package:provider/provider.dart';
@@ -63,10 +64,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     super.initState();
     // Nếu có noteId (tức là đang sửa ghi chú cũ)
     if (widget.noteId != null) {
-      // Đợi giao diện (context) dựng xong thì gọi _loadNote() để tải dữ liệu ghi chú cũ vào khung gõ
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadNote();
-      });
+      // Đọc trực tiếp dữ liệu thay vì chờ sau khung hình đầu tiên để tránh giật màu nền
+      _loadNote();
     }
     
     // Nếu người dùng bấm tạo ghi chú có bản vẽ từ màn hình chính
@@ -315,34 +314,37 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         }
       },
       canPop: false, // Ngăn hành vi quay lại mặc định để ép chạy hàm onPopInvoked ở trên
-      child: Scaffold(
-        // Màu nền của nguyên màn hình phụ thuộc vào màu người dùng đã chọn
-        backgroundColor: ColorUtils.getAdaptiveColor(context, _selectedColor),
-        appBar: AppBar(
-          backgroundColor: Colors.transparent, // AppBar trong suốt để hòa làm một với màu nền
-          elevation: 0, // Không có bóng đổ (làm cho phẳng)
-          actions: [
-            // Nút Bật/tắt hộp kiểm
-            IconButton(
-              icon: Icon(_isChecklist ? Icons.check_box_outlined : Icons.add_box_outlined),
-              tooltip: _isChecklist ? 'Ẩn hộp kiểm' : 'Hiển thị hộp kiểm',
-              onPressed: _toggleChecklistMode,
-            ),
-            // Chỉ hiển thị nút Xóa (thùng rác) khi đây là bản sửa của ghi chú cũ
-            if (_existingNote != null)
-              IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: _deleteNote,
-              ),
-            // Nút Bảng màu được dời xuống thanh BottomAppBar bên dưới
-            // Nút Dấu tích (lưu thủ công)
-            IconButton(
-              icon: const Icon(Icons.check),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        color: ColorUtils.getAdaptiveColor(context, _selectedColor),
+        child: Scaffold(
+          backgroundColor: Colors.transparent, // Để nền trong suốt để lộ AnimatedContainer phía sau
+          extendBody: true, // Cho phép nội dung tràn xuống dưới thanh BottomBar lơ lửng
+          appBar: AppBar(
+            backgroundColor: Colors.transparent, // AppBar trong suốt
+            elevation: 0,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios_new_rounded),
               onPressed: () => _saveNoteAndPop(),
             ),
-          ],
-        ),
-        // Phần thân chứa ảnh và 2 ô điền văn bản
+            actions: [
+              // Nút Bật/tắt hộp kiểm
+              IconButton(
+                icon: Icon(_isChecklist ? Icons.check_box_outlined : Icons.add_box_outlined),
+                tooltip: _isChecklist ? 'Ẩn hộp kiểm' : 'Hiển thị hộp kiểm',
+                onPressed: _toggleChecklistMode,
+              ),
+              // Chỉ hiển thị nút Xóa (thùng rác) khi đây là bản sửa của ghi chú cũ
+              if (_existingNote != null)
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  onPressed: _deleteNote,
+                ),
+              const SizedBox(width: 8),
+            ],
+          ),
+          // Phần thân chứa ảnh và 2 ô điền văn bản
         body: Focus(
           autofocus: true,
           onKeyEvent: (node, event) {
@@ -367,106 +369,157 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     // Hiển thị danh sách ảnh nếu có
                     if (_imagePaths.isNotEmpty)
                       SizedBox(
-                        height: 200,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _imagePaths.length,
-                    itemBuilder: (context, index) {
-                      final path = _imagePaths[index];
-                      return Container(
-                        margin: const EdgeInsets.only(right: 16, bottom: 16),
-                        child: Stack(
-                          alignment: Alignment.topRight,
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.file(
-                                File(path),
-                                fit: BoxFit.contain,
-                                height: 200,
+                        height: 220,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _imagePaths.length,
+                          itemBuilder: (context, index) {
+                            final path = _imagePaths[index];
+                            return Container(
+                              margin: const EdgeInsets.only(right: 16, bottom: 24, top: 8),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.08),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 4),
+                                  )
+                                ],
                               ),
-                            ),
-                            // Nút xóa ảnh
-                            IconButton(
-                              icon: const Icon(Icons.cancel, color: Colors.black54),
-                              onPressed: () {
-                                setState(() {
-                                  _imagePaths.removeAt(index);
-                                });
-                              },
-                            ),
-                          ],
+                              child: Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(16),
+                                    child: Image.file(
+                                      File(path),
+                                      fit: BoxFit.cover, // Cắt ảnh cho vừa vặn
+                                      height: 220,
+                                      width: _imagePaths.length == 1 ? MediaQuery.of(context).size.width - 48 : 280,
+                                    ),
+                                  ),
+                                  // Nút xóa ảnh hiệu ứng kính mờ (Glassmorphism)
+                                  Positioned(
+                                    top: 12,
+                                    right: 12,
+                                    child: ClipOval(
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(sigmaX: 8.0, sigmaY: 8.0),
+                                        child: Container(
+                                          color: Colors.black.withOpacity(0.25),
+                                          child: IconButton(
+                                            icon: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
+                                            constraints: const BoxConstraints(),
+                                            padding: const EdgeInsets.all(8),
+                                            onPressed: () {
+                                              setState(() {
+                                                _imagePaths.removeAt(index);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
                         ),
-                      );
-                    },
-                  ),
-                ),
+                      ),
               // TextField là widget tạo ô điền chữ (Ô tiêu đề)
               TextField(
                 controller: _titleController,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold), // Chữ bự, in đậm
-                decoration: const InputDecoration(
-                  hintText: 'Tiêu đề', // Chữ mờ khi chưa gõ gì
-                  border: InputBorder.none, // Xóa hoàn toàn viền, tạo cảm giác borderless như Google Keep
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  height: 1.2,
+                ), // Chữ bự, in đậm, thiết kế premium
+                decoration: InputDecoration(
+                  hintText: 'Tiêu đề', 
+                  hintStyle: TextStyle(fontWeight: FontWeight.w600, color: Theme.of(context).hintColor.withOpacity(0.4)),
+                  border: InputBorder.none, 
                 ),
-                maxLines: null, // Nhập bao nhiêu dòng cũng được
-                textInputAction: TextInputAction.next, // Bấm Enter sẽ chuyển xuống ô dưới
+                maxLines: null, 
+                textInputAction: TextInputAction.next, 
               ),
-              // Expanded giúp khung nội dung chiếm toàn bộ phần diện tích màn hình còn lại phía dưới
+              const SizedBox(height: 8),
+              // Khung nội dung
               Expanded(
-                child: _isChecklist
-                    ? _buildChecklistUI()
-                    : TextField(
-                        controller: _contentController, // Khung nội dung
-                        style: Theme.of(context).textTheme.bodyLarge,
-                        decoration: const InputDecoration(
-                          hintText: 'Ghi chú...',
-                          border: InputBorder.none, // Tương tự, không viền
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 90), // Chừa không gian cho dock nổi
+                  child: _isChecklist
+                      ? _buildChecklistUI()
+                      : TextField(
+                          controller: _contentController, // Khung nội dung
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            fontSize: 17,
+                            height: 1.6,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Nội dung ghi chú...',
+                            hintStyle: TextStyle(color: Theme.of(context).hintColor.withOpacity(0.4)),
+                            border: InputBorder.none, 
+                          ),
+                          maxLines: null, 
+                          keyboardType: TextInputType.multiline, 
                         ),
-                        maxLines: null, // Gõ xuống dòng thoải mái
-                        keyboardType: TextInputType.multiline, // Bật bàn phím phù hợp để gõ nhiều dòng
-                      ),
-              ),
-            ],
-          ),
-          ),
-          ),
-          ),
-        ),
-        // THANH CÔNG CỤ BOTTOM APP BAR
-        bottomNavigationBar: BottomAppBar(
-          color: Colors.transparent,
-          elevation: 0,
-          child: Row(
-            children: [
-              // Nút Đổi màu
-              IconButton(
-                icon: const Icon(Icons.palette_outlined),
-                tooltip: 'Đổi màu nền',
-                onPressed: () => _showColorPicker(context),
-              ),
-              // Nút Chọn Ảnh từ máy
-              IconButton(
-                icon: const Icon(Icons.image_outlined),
-                tooltip: 'Thêm ảnh',
-                onPressed: _pickImage,
-              ),
-              // Nút Dán Ảnh từ Clipboard
-              IconButton(
-                icon: const Icon(Icons.content_paste),
-                tooltip: 'Dán ảnh (Ctrl+V)',
-                onPressed: _pasteImage,
-              ),
-              // Nút Vẽ tay
-              IconButton(
-                icon: const Icon(Icons.brush_outlined),
-                tooltip: 'Bản vẽ mới',
-                onPressed: _openDrawingScreen,
+                ),
               ),
             ],
           ),
         ),
       ),
+    ),
+  ),
+        // THANH CÔNG CỤ BOTTOM APP BAR - DẠNG VIÊN THUỐC NỔI
+        bottomNavigationBar: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(32),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  )
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.palette_outlined),
+                    tooltip: 'Đổi màu nền',
+                    onPressed: () => _showColorPicker(context),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.image_outlined),
+                    tooltip: 'Thêm ảnh',
+                    onPressed: _pickImage,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.content_paste_rounded),
+                    tooltip: 'Dán ảnh (Ctrl+V)',
+                    onPressed: _pasteImage,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.brush_rounded),
+                    tooltip: 'Bản vẽ mới',
+                    onPressed: _openDrawingScreen,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+      ), // Đóng AnimatedContainer
     );
   }
 

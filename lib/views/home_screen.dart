@@ -506,21 +506,35 @@ class _HomeScreenState extends State<HomeScreen> {
                                   if (note.reminderAt != null)
                                     Container(
                                       margin: const EdgeInsets.only(top: 8),
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
                                         color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                         borderRadius: BorderRadius.circular(16),
                                       ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.access_time, size: 14),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            DateFormat('dd/MM HH:mm').format(note.reminderAt!),
-                                            style: const TextStyle(fontSize: 11),
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(16),
+                                          onTap: () {
+                                            // Xóa lời nhắc khi bấm vào thẻ
+                                            viewModel.setReminder(note.id, null);
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.access_time, size: 13),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  DateFormat('dd/MM HH:mm').format(note.reminderAt!),
+                                                  style: const TextStyle(fontSize: 11),
+                                                ),
+                                                const SizedBox(width: 6),
+                                                const Icon(Icons.close, size: 13, color: Colors.grey),
+                                              ],
+                                            ),
                                           ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                 ],

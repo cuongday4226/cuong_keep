@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   irondash_engine_context
+  local_notifier
   screen_retriever_windows
   super_native_extensions
   tray_manager

@@ -32,18 +32,20 @@ class NotesViewModel extends ChangeNotifier {
     // Cứ mỗi 30 giây kiểm tra 1 lần xem có báo thức nào tới hạn chưa
     _reminderTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
       final now = DateTime.now();
-      for (var note in _notes) {
+      // Copy list để tránh lỗi ConcurrentModificationError nếu setReminder làm thay đổi list _notes
+      final notesToCheck = _notes.toList(); 
+      for (var note in notesToCheck) {
         if (note.reminderAt != null) {
           // Báo thức được tính là tới hạn nếu giờ hiện tại lớn hơn hoặc bằng giờ báo thức
           final diff = now.difference(note.reminderAt!);
-          // Kiểm tra diff trong khoảng 0 đến 60 giây để tránh bắn thông báo nhiều lần hoặc bị lỡ
-          if (diff.inSeconds >= 0 && diff.inMinutes < 2) {
+          // Quá hạn hoặc tới hạn thì bắn thông báo (không giới hạn thời gian để bắt được những báo thức bị nhỡ khi tắt app)
+          if (diff.inSeconds >= 0) {
             await NotificationService().showNotification(
               id: note.id,
               title: 'Nhắc nhở: ${note.title.isNotEmpty ? note.title : "Ghi chú"}',
               body: note.content,
             );
-            // Sau khi thông báo, xóa hẹn giờ đi
+            // Sau khi thông báo, xóa hẹn giờ đi để không lặp lại
             await setReminder(note.id, null);
           }
         }
