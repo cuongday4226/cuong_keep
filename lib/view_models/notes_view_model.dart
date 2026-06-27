@@ -10,7 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 enum NoteFilter { notes, reminders, archive, trash, label }
 
 class NotesViewModel extends ChangeNotifier {
-  final AppDatabase _db;
+  AppDatabase _db;
   List<Note> _allNotes = []; // Tất cả ghi chú tải từ DB
   String _searchQuery = '';
   Timer? _reminderTimer;
@@ -203,6 +203,13 @@ class NotesViewModel extends ChangeNotifier {
   // Đóng database để phục vụ cho việc sao lưu / phục hồi
   Future<void> closeDatabase() async {
     await _db.close();
+  }
+
+  // Khởi động lại database sau khi phục hồi dữ liệu thành công
+  Future<void> reloadDatabase() async {
+    _db = AppDatabase();
+    await _loadNotes();
+    await _initLabels();
   }
 
   // --- HÀM TÌM KIẾM ---

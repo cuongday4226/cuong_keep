@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:archive/archive_io.dart';
+import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import '../utils/file_utils.dart';
@@ -8,143 +8,242 @@ import 'package:provider/provider.dart';
 import '../view_models/notes_view_model.dart';
 
 class BackupService {
-  // Xuất dữ liệu (Backup)
+  // --- CHỨC NĂNG BACKUP ---
   static Future<void> backupData(BuildContext context) async {
     try {
       final dataDir = await FileUtils.getDataDirectory();
-      
-      // Chọn nơi lưu file zip
-      String? outputFile = await FilePicker.saveFile(
-        dialogTitle: 'Chọn nơi lưu bản sao lưu',
-        fileName: 'CuongKeep_Backup_${DateTime.now().millisecondsSinceEpoch}.zip',
-        type: FileType.custom,
-        allowedExtensions: ['zip'],
+
+      // Dùng FilePicker.getDirectoryPath thay vì saveFile để tương thích 100% với Windows
+      String? selectedDir = await FilePicker.getDirectoryPath(
+        dialogTitle: 'Chọn thư mục để lưu bản sao lưu',
       );
 
-      if (outputFile == null) return; // Người dùng hủy
+      if (selectedDir == null) return; // Người dùng hủy
 
       if (!context.mounted) return;
 
-      // ĐÓNG KẾT NỐI DATABASE TRƯỚC KHI NÉN (Nếu không Windows sẽ báo lỗi File Locked)
-      await context.read<NotesViewModel>().closeDatabase();
-
-      // Nén thư mục
-      var encoder = ZipFileEncoder();
-      encoder.zipDirectory(dataDir, filename: outputFile);
-      
-      if (context.mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Sao lưu thành công!'),
-            content: Text('Dữ liệu đã được lưu tại: $outputFile\n\nỨng dụng cần khởi động lại để tiếp tục sử dụng.'),
-            actions: [
-              TextButton(
-                onPressed: () => exit(0),
-                child: const Text('Đóng ứng dụng'),
-              ),
+      // Hiển thị loading (tùy chọn) vì quá trình nén có thể mất vài giây nếu nhiều ảnh
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 20),
+              Text('Đang tạo bản sao lưu...'),
             ],
           ),
+        ),
+      );
+
+      // Tạo tên file tự động
+      final timestamp = DateTime.now();
+      final fileName = 'CuongKeep_Backup_'
+          '${timestamp.year}${timestamp.month.toString().padLeft(2, '0')}${timestamp.day.toString().padLeft(2, '0')}_'
+          '${timestamp.hour.toString().padLeft(2, '0')}${timestamp.minute.toString().padLeft(2, '0')}${timestamp.second.toString().padLeft(2, '0')}'
+          '.backup';
+      
+      final outputPath = p.join(selectedDir, fileName);
+      final tempDir = await Directory.systemTemp.createTemp('cuongkeep_backup_');
+
+      try {
+        // Copy toàn bộ dữ liệu (Database + Hình ảnh) sang thư mục tạm
+        await _copyDirectory(dataDir, tempDir);
+
+        // Nén thư mục tạm thành file ZIP
+        final archive = Archive();
+        await for (var entity in tempDir.list(recursive: true)) {
+          if (entity is File) {
+            final relativePath = p.relative(entity.path, from: tempDir.path);
+            final bytes = await entity.readAsBytes();
+            archive.addFile(ArchiveFile(relativePath, bytes.length, bytes));
+          }
+        }
+
+        final zipData = ZipEncoder().encode(archive);
+        final outputFile = File(outputPath);
+        
+        // ĐẢM BẢO THƯ MỤC CHA TỒN TẠI (Fix lỗi OneDrive trên Windows)
+        await outputFile.parent.create(recursive: true);
+        await outputFile.writeAsBytes(zipData, flush: true);
+
+        if (!context.mounted) return;
+        Navigator.of(context).pop(); // Tắt loading dialog
+
+        // Hiện SnackBar thành công giống app mẫu của bạn
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Sao lưu thành công: $fileName'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            showCloseIcon: true,
+          ),
         );
+      } finally {
+        try {
+          await tempDir.delete(recursive: true);
+        } catch (_) {}
       }
     } catch (e) {
+      debugPrint('Export Error: $e');
       if (context.mounted) {
+        try { Navigator.of(context).pop(); } catch (_) {} // Tắt loading nếu đang hiện
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi khi sao lưu: $e')),
+          SnackBar(
+            content: Text('Lỗi Sao Lưu: $e'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
+            showCloseIcon: true,
+          ),
         );
       }
     }
   }
 
-  // Nhập dữ liệu (Restore)
+  // --- CHỨC NĂNG RESTORE ---
   static Future<void> restoreData(BuildContext context) async {
     try {
-      // Chọn file zip để phục hồi
+      // Dùng FilePicker.pickFiles cho Windows
       FilePickerResult? result = await FilePicker.pickFiles(
-        dialogTitle: 'Chọn file sao lưu (.zip)',
-        type: FileType.custom,
-        allowedExtensions: ['zip'],
+        dialogTitle: 'Chọn file sao lưu (.backup hoặc .zip)',
+        type: FileType.any, // Không dùng allowedExtensions trên Windows vì dễ gây lỗi filter
       );
 
-      if (result == null || result.files.single.path == null) return; // Người dùng hủy
+      if (result != null && result.files.single.path != null) {
+        final File selectedFile = File(result.files.single.path!);
 
-      final zipFile = File(result.files.single.path!);
-      final dataDir = await FileUtils.getDataDirectory();
+        if (!context.mounted) return;
 
-      if (!context.mounted) return;
-
-      // Cảnh báo người dùng trước khi ghi đè
-      bool? confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Cảnh báo phục hồi'),
-          content: const Text('Quá trình này sẽ xóa sạch dữ liệu hiện tại và thay thế bằng dữ liệu trong file sao lưu. Bạn có chắc chắn muốn tiếp tục?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Hủy'),
+        // Cảnh báo người dùng trước khi đè dữ liệu
+        final bool confirm = await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Cảnh báo phục hồi'),
+            content: const Text(
+              'Quá trình này sẽ XÓA SẠCH dữ liệu hiện tại và thay thế bằng dữ liệu trong file sao lưu.\n\n'
+              'Bạn có chắc chắn muốn tiếp tục?',
             ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Phục hồi', style: TextStyle(color: Colors.red)),
+            actions: [
+              OutlinedButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Phục hồi')),
+            ],
+          ),
+        ) ?? false;
+
+        if (confirm) {
+          if (!context.mounted) return;
+
+          // Hiển thị dialog loading
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const AlertDialog(
+              content: Row(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(width: 20),
+                  Text('Đang phục hồi dữ liệu...'),
+                ],
+              ),
             ),
-          ],
-        ),
-      );
+          );
 
-      if (confirm != true) return;
+          final tempDir = await Directory.systemTemp.createTemp('cuongkeep_restore_');
+          try {
+            final bytes = await selectedFile.readAsBytes();
+            if (bytes.isEmpty) {
+              throw Exception('File sao lưu trống rỗng hoặc bị hỏng!');
+            }
 
-      if (!context.mounted) return;
+            final archive = ZipDecoder().decodeBytes(bytes);
+            bool hasDatabase = false;
 
-      // ĐÓNG DATABASE TRƯỚC KHI GHI ĐÈ
-      await context.read<NotesViewModel>().closeDatabase();
+            // Giải nén ra thư mục tạm
+            for (final file in archive) {
+              if (file.name.contains('notes_db.sqlite')) {
+                hasDatabase = true;
+              }
+              if (file.isFile) {
+                final data = file.content as List<int>;
+                final destFile = File(p.join(tempDir.path, file.name));
+                await destFile.parent.create(recursive: true);
+                await destFile.writeAsBytes(data);
+              }
+            }
 
-      // Xóa toàn bộ nội dung trong thư mục dataDir (ẩn và lộ)
-      if (await dataDir.exists()) {
-        await dataDir.delete(recursive: true);
-      }
-      await dataDir.create(recursive: true);
+            if (!hasDatabase) {
+              throw Exception('File này không phải là bản sao lưu hợp lệ của Cuong Keep!');
+            }
 
-      // Giải nén
-      final bytes = await zipFile.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
+            if (!context.mounted) return;
 
-      for (final file in archive) {
-        final filename = file.name;
-        if (file.isFile) {
-          final data = file.content as List<int>;
-          final destFile = File(p.join(dataDir.path, filename));
-          // Tạo thư mục nếu cần thiết (dù zipDirectory thường nén thẳng file nếu thư mục không sâu)
-          await destFile.parent.create(recursive: true);
-          await destFile.writeAsBytes(data);
+            // Đóng Database hiện tại trước khi ghi đè
+            await context.read<NotesViewModel>().closeDatabase();
+
+            final dataDir = await FileUtils.getDataDirectory();
+            // Xóa dữ liệu cũ
+            if (await dataDir.exists()) {
+              await dataDir.delete(recursive: true);
+            }
+            await dataDir.create(recursive: true);
+
+            // Copy toàn bộ dữ liệu (ảnh + database) từ temp sang thư mục thật
+            await _copyDirectory(tempDir, dataDir);
+
+            if (context.mounted) {
+              // Reload lại Database mà không cần khởi động lại ứng dụng
+              await context.read<NotesViewModel>().reloadDatabase();
+              
+              Navigator.of(context).pop(); // Tắt loading dialog
+              
+              // Hiện SnackBar thành công
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Phục hồi dữ liệu thành công!'),
+                  backgroundColor: Colors.green,
+                  behavior: SnackBarBehavior.floating,
+                  showCloseIcon: true,
+                ),
+              );
+            }
+          } finally {
+            try {
+              await tempDir.delete(recursive: true);
+            } catch (_) {}
+          }
         }
       }
-
+    } catch (e) {
+      debugPrint('Import Error: $e');
       if (context.mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Phục hồi thành công!'),
-            content: const Text('Ứng dụng cần khởi động lại để tải dữ liệu mới. Vui lòng tắt ứng dụng và mở lại.'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  exit(0); // Tắt app
-                },
-                child: const Text('Đóng ứng dụng'),
-              ),
-            ],
+        try { Navigator.of(context).pop(); } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi Phục Hồi: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            showCloseIcon: true,
           ),
         );
       }
+    }
+  }
 
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi khi phục hồi: $e')),
-        );
+  // Hàm hỗ trợ copy toàn bộ thư mục đệ quy
+  static Future<void> _copyDirectory(Directory source, Directory destination) async {
+    await for (var entity in source.list(recursive: false)) {
+      if (entity is Directory) {
+        var newDirectory = Directory(p.join(destination.path, p.basename(entity.path)));
+        await newDirectory.create(recursive: true);
+        await _copyDirectory(entity, newDirectory);
+      } else if (entity is File) {
+        try {
+          await entity.copy(p.join(destination.path, p.basename(entity.path)));
+        } catch (e) {
+          debugPrint('[BACKUP] Không thể copy ${p.basename(entity.path)}: $e');
+        }
       }
     }
   }

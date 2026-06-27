@@ -1106,18 +1106,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: const Text('Sao lưu dữ liệu'),
                       subtitle: const Text('Xuất ghi chú và hình ảnh'),
                       onTap: () {
-                        Navigator.pop(context);
-                        BackupService.backupData(context);
+                        Navigator.pop(context); // Đóng dialog Settings
+                        // Dùng context của HomeScreen (không phải context của dialog đã đóng)
+                        BackupService.backupData(this.context);
                       },
                     ),
                     // Mục 4: Phục hồi dữ liệu
                     ListTile(
                       leading: const Icon(Icons.cloud_download_outlined),
                       title: const Text('Nhập dữ liệu'),
-                      subtitle: const Text('Khôi phục từ tệp ZIP'),
+                      subtitle: const Text('Khôi phục từ bản sao lưu'),
                       onTap: () {
-                        Navigator.pop(context);
-                        BackupService.restoreData(context);
+                        Navigator.pop(context); // Đóng dialog Settings
+                        // Dùng context của HomeScreen (không phải context của dialog đã đóng)
+                        BackupService.restoreData(this.context);
                       },
                     ),
                   ],
