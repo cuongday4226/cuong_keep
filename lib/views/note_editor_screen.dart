@@ -12,6 +12,7 @@ import '../utils/color_utils.dart';
 import '../utils/string_utils.dart';
 import '../widgets/checklist_item_widget.dart';
 import '../utils/file_utils.dart';
+import '../services/ai_service.dart';
 
 // NoteEditorScreen: Màn hình chỉnh sửa/thêm mới ghi chú
 // StatefulWidget là một widget CÓ LƯU TRẠNG THÁI BÊN TRONG NÓ.
@@ -308,6 +309,172 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   }
 
   // Hàm build() chứa toàn bộ giao diện màn hình
+  // --- TÍNH NĂNG AI ---
+  Future<void> _openAIBottomSheet() async {
+    // 1. Kiểm tra API Key
+    final hasKey = await AIService.hasApiKey();
+    if (!hasKey && mounted) {
+      final keyController = TextEditingController();
+      final bool? keySaved = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Nhập Google Gemini API Key'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Để sử dụng AI miễn phí, bạn cần cung cấp Gemini API Key (lấy từ aistudio.google.com).'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: keyController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'API Key',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+            FilledButton(
+              onPressed: () async {
+                if (keyController.text.isNotEmpty) {
+                  await AIService.saveApiKey(keyController.text);
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Lưu Key'),
+            ),
+          ],
+        ),
+      );
+
+      if (keySaved != true) return; // Hủy
+    }
+
+    if (!mounted) return;
+
+    // 2. Hiển thị Menu AI
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('Trợ lý AI Gemini', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.summarize_rounded, color: Colors.blue),
+                title: const Text('Tóm tắt ghi chú'),
+                subtitle: const Text('Tạo bullet points ngắn gọn từ ghi chú dài'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _runAIAction('summarize');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.spellcheck_rounded, color: Colors.green),
+                title: const Text('Sửa lỗi chính tả & Hành văn'),
+                subtitle: const Text('Chỉnh sửa câu chữ mượt mà, chuyên nghiệp'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _runAIAction('grammar');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.local_offer_rounded, color: Colors.orange),
+                title: const Text('Tự động gắn thẻ (Tag)'),
+                subtitle: const Text('Đề xuất nhãn phân loại dựa trên nội dung'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _runAIAction('tags');
+                },
+              ),
+              const Divider(),
+              // Nút đổi Key
+              ListTile(
+                leading: const Icon(Icons.key_rounded, color: Colors.grey),
+                title: const Text('Đổi API Key khác'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await AIService.saveApiKey('');
+                  if (mounted) _openAIBottomSheet();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _runAIAction(String action) async {
+    final title = _titleController.text;
+    final content = _contentController.text;
+
+    if (content.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập nội dung trước khi dùng AI.')));
+      return;
+    }
+
+    // Hiển thị Loading Dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Text('AI đang suy nghĩ...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      if (action == 'summarize') {
+        final summary = await AIService.summarize(title, content);
+        setState(() {
+          _contentController.text = '$_contentController.text\n\n--- TÓM TẮT BỞI AI ---\n$summary';
+        });
+      } else if (action == 'grammar') {
+        final fixedText = await AIService.fixGrammar(title, content);
+        setState(() {
+          _contentController.text = fixedText;
+        });
+      } else if (action == 'tags') {
+        final newTags = await AIService.generateTags(title, content);
+        setState(() {
+          for (var tag in newTags) {
+            if (!_tags.contains(tag)) {
+              _tags.add(tag);
+              // Lưu vào global tags
+              context.read<NotesViewModel>().addGlobalLabel(tag);
+            }
+          }
+        });
+      }
+
+      if (mounted) {
+        Navigator.pop(context); // Tắt loading
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('AI đã xử lý xong!'), backgroundColor: Colors.green));
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Tắt loading
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi AI: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // PopScope: chặn sự kiện người dùng bấm nút Quay lại (Back)
@@ -333,6 +500,12 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               onPressed: () => _saveNoteAndPop(),
             ),
             actions: [
+              // Nút Trợ lý AI
+              IconButton(
+                icon: const Icon(Icons.auto_awesome_rounded, color: Colors.amber),
+                tooltip: 'Trợ lý AI',
+                onPressed: _openAIBottomSheet,
+              ),
               // Nút Bật/tắt hộp kiểm
               IconButton(
                 icon: Icon(_isChecklist ? Icons.check_box_outlined : Icons.add_box_outlined),
