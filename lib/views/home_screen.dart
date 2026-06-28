@@ -12,6 +12,7 @@ import '../utils/string_utils.dart';
 import '../models/database.dart';
 import 'package:intl/intl.dart';
 import '../services/backup_service.dart';
+import '../services/ai_service.dart';
 
 // Đổi từ StatelessWidget sang StatefulWidget để có thể quản lý trạng thái của Navigation Drawer
 class HomeScreen extends StatefulWidget {
@@ -1120,6 +1121,41 @@ class _HomeScreenState extends State<HomeScreen> {
                         Navigator.pop(context); // Đóng dialog Settings
                         // Dùng context của HomeScreen (không phải context của dialog đã đóng)
                         BackupService.restoreData(this.context);
+                      },
+                    ),
+                    const Divider(),
+                    // Mục 5: Đổi API Key AI
+                    ListTile(
+                      leading: const Icon(Icons.key_rounded, color: Colors.grey),
+                      title: const Text('Đổi API Key AI'),
+                      subtitle: const Text('Xóa API Key cũ để cài đặt Key mới'),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        final confirm = await showDialog<bool>(
+                          context: this.context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Đổi API Key?'),
+                            content: const Text('Bạn có chắc chắn muốn đổi API Key không? Hành động này sẽ xóa API Key hiện tại của bạn khỏi hệ thống.'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('Hủy'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text('Đồng ý', style: TextStyle(color: Colors.red)),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true) {
+                          await AIService.saveApiKey('');
+                          if (mounted) {
+                            ScaffoldMessenger.of(this.context).showSnackBar(
+                              const SnackBar(content: Text('Đã xóa API Key. Vui lòng bấm vào nút Cây đũa thần để nhập Key mới.')),
+                            );
+                          }
+                        }
                       },
                     ),
                   ],

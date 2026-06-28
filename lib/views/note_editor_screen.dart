@@ -404,8 +404,27 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 title: const Text('Đổi API Key khác'),
                 onTap: () async {
                   Navigator.pop(ctx);
-                  await AIService.saveApiKey('');
-                  if (mounted) _openAIBottomSheet();
+                  final confirm = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Đổi API Key?'),
+                      content: const Text('Bạn có chắc chắn muốn đổi API Key không? Hành động này sẽ xóa API Key hiện tại của bạn khỏi hệ thống.'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Hủy'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Đồng ý', style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirm == true) {
+                    await AIService.saveApiKey('');
+                    if (mounted) _openAIBottomSheet();
+                  }
                 },
               ),
             ],
@@ -443,7 +462,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (action == 'summarize') {
         final summary = await AIService.summarize(title, content);
         setState(() {
-          _contentController.text = '$_contentController.text\n\n--- TÓM TẮT BỞI AI ---\n$summary';
+          _contentController.text = '${_contentController.text}\n\n--- TÓM TẮT BỞI AI ---\n$summary';
         });
       } else if (action == 'grammar') {
         final fixedText = await AIService.fixGrammar(title, content);
