@@ -849,12 +849,18 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     final viewModel = context.read<NotesViewModel>();
     final allTags = viewModel.allTags.toList();
     final TextEditingController newTagController = TextEditingController();
+    String searchQuery = ''; // Lưu từ khóa tìm kiếm
 
     showDialog(
       context: context,
       builder: (context) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            // Lọc danh sách nhãn dựa trên từ khóa tìm kiếm
+            final filteredTags = allTags
+                .where((tag) => tag.toLowerCase().contains(searchQuery.toLowerCase()))
+                .toList();
+
             return AlertDialog(
               title: const Text('Gắn nhãn'),
               content: SizedBox(
@@ -862,11 +868,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Ô nhập nhãn mới
+                    // Ô nhập nhãn mới / Tìm kiếm
                     TextField(
                       controller: newTagController,
+                      onChanged: (text) {
+                        setDialogState(() {
+                          searchQuery = text.trim();
+                        });
+                      },
                       decoration: InputDecoration(
-                        hintText: 'Nhập tên nhãn mới...',
+                        hintText: 'Nhập tên nhãn hoặc tìm kiếm...',
                         suffixIcon: IconButton(
                           icon: const Icon(Icons.add),
                           onPressed: () {
@@ -879,6 +890,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                 }
                                 if (!_tags.contains(text)) _tags.add(text);
                                 newTagController.clear();
+                                searchQuery = '';
                               });
                               // Cập nhật lại UI màn hình editor phía sau
                               setState(() {});
@@ -896,6 +908,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                             }
                             if (!_tags.contains(text)) _tags.add(text);
                             newTagController.clear();
+                            searchQuery = '';
                           });
                           setState(() {});
                         }
@@ -906,9 +919,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     Flexible(
                       child: ListView.builder(
                         shrinkWrap: true,
-                        itemCount: allTags.length,
+                        itemCount: filteredTags.length,
                         itemBuilder: (context, index) {
-                          final tag = allTags[index];
+                          final tag = filteredTags[index];
                           final isChecked = _tags.contains(tag);
                           return CheckboxListTile(
                             title: Text(tag),

@@ -24,10 +24,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _drawerTagSearchController = TextEditingController();
+  String _drawerTagSearchQuery = '';
+  bool _isTagsExpanded = true;
 
   @override
   void dispose() {
     _searchController.dispose();
+    _drawerTagSearchController.dispose();
     super.dispose();
   }
 
@@ -35,6 +39,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final notesVM = context.watch<NotesViewModel>();
     final isSelectionMode = notesVM.isSelectionMode;
+
+    final allTags = notesVM.allTags;
+    final filteredDrawerTags = allTags
+        .where((tag) => tag.toLowerCase().contains(_drawerTagSearchQuery.toLowerCase()))
+        .toList();
 
     return Scaffold(
       // --- THANH TRƯỢT BÊN TRÁI (NAVIGATION DRAWER) ---
@@ -59,26 +68,85 @@ class _HomeScreenState extends State<HomeScreen> {
             selectedIcon: Icon(Icons.notifications),
             label: Text('Lời nhắc'),
           ),
-          if (notesVM.allTags.isNotEmpty) ...[
+          if (allTags.isNotEmpty) ...[
             const Divider(indent: 28, endIndent: 28),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
-              child: Text(
-                'Nhãn',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(28),
+                onTap: () {
+                  setState(() {
+                    _isTagsExpanded = !_isTagsExpanded;
+                  });
+                },
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Nhãn', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      Icon(_isTagsExpanded ? Icons.expand_less : Icons.expand_more, size: 20),
+                    ],
+                  ),
+                ),
               ),
             ),
-            ...notesVM.allTags.map((tag) => NavigationDrawerDestination(
-              icon: const Icon(Icons.label_outline),
-              selectedIcon: const Icon(Icons.label),
-              label: Text(tag),
-            )),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOutCubic,
+              child: !_isTagsExpanded ? const SizedBox.shrink() : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 4),
+                    child: TextField(
+                      controller: _drawerTagSearchController,
+                      onChanged: (text) {
+                        setState(() {
+                          _drawerTagSearchQuery = text.trim();
+                        });
+                      },
+                      decoration: const InputDecoration(
+                        hintText: 'Tìm nhãn...',
+                        isDense: true,
+                        prefixIcon: Icon(Icons.search, size: 20),
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                  ...filteredDrawerTags.map((tag) {
+                    final isSelected = notesVM.currentFilter == NoteFilter.label && notesVM.currentLabel == tag;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                      child: ListTile(
+                        shape: const StadiumBorder(),
+                        leading: Icon(isSelected ? Icons.label : Icons.label_outline),
+                        title: Text(tag),
+                        selected: isSelected,
+                        selectedColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                        selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
+                        onTap: () {
+                          notesVM.setFilter(NoteFilter.label, label: tag);
+                          Navigator.pop(context);
+                        },
+                      ),
+                    );
+                  }),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                    child: ListTile(
+                      shape: const StadiumBorder(),
+                      leading: const Icon(Icons.edit_outlined),
+                      title: const Text('Chỉnh sửa nhãn'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        showDialog(context: context, builder: (_) => const EditLabelsDialog());
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
-          const NavigationDrawerDestination(
-            icon: Icon(Icons.edit_outlined),
-            selectedIcon: Icon(Icons.edit),
-            label: Text('Chỉnh sửa nhãn'),
-          ),
           const Divider(indent: 28, endIndent: 28),
           const NavigationDrawerDestination(
             icon: Icon(Icons.archive_outlined),
@@ -221,40 +289,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  int _getDrawerIndex(NotesViewModel notesVM) {
+  int? _getDrawerIndex(NotesViewModel notesVM) {
     if (notesVM.currentFilter == NoteFilter.notes) return 0;
     if (notesVM.currentFilter == NoteFilter.reminders) return 1;
-    
-    final tags = notesVM.allTags;
-    if (notesVM.currentFilter == NoteFilter.label) {
-      int tagIndex = tags.indexOf(notesVM.currentLabel ?? '');
-      if (tagIndex != -1) return 2 + tagIndex;
-    }
-    
-    if (notesVM.currentFilter == NoteFilter.archive) return 2 + tags.length + 1;
-    if (notesVM.currentFilter == NoteFilter.trash) return 2 + tags.length + 2;
-    
-    return 0;
+    if (notesVM.currentFilter == NoteFilter.archive) return 2;
+    if (notesVM.currentFilter == NoteFilter.trash) return 3;
+    return null;
   }
 
   void _onDestinationSelected(int index, NotesViewModel notesVM) {
-    final tags = notesVM.allTags;
-    if (index == 0) {
-      notesVM.setFilter(NoteFilter.notes);
-    } else if (index == 1) {
-      notesVM.setFilter(NoteFilter.reminders);
-    } else if (index >= 2 && index < 2 + tags.length) {
-      notesVM.setFilter(NoteFilter.label, label: tags[index - 2]);
-    } else if (index == 2 + tags.length) {
-      Navigator.pop(context); // Tự động đóng Drawer
-      showDialog(context: context, builder: (_) => const EditLabelsDialog());
-      return; // Không đổi filter
-    } else if (index == 2 + tags.length + 1) {
-      notesVM.setFilter(NoteFilter.archive);
-    } else if (index == 2 + tags.length + 2) {
-      notesVM.setFilter(NoteFilter.trash);
-    }
-    Navigator.pop(context); // Tự động đóng Drawer
+    if (index == 0) notesVM.setFilter(NoteFilter.notes);
+    else if (index == 1) notesVM.setFilter(NoteFilter.reminders);
+    else if (index == 2) notesVM.setFilter(NoteFilter.archive);
+    else if (index == 3) notesVM.setFilter(NoteFilter.trash);
+    Navigator.pop(context);
   }
 
   // Widget riêng dành cho giao diện chính của phần Ghi chú

@@ -15,6 +15,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
   String? _editingLabel;
   final _editController = TextEditingController();
   final _editFocusNode = FocusNode();
+  String _searchQuery = ''; // Lưu từ khóa tìm kiếm
 
   @override
   void dispose() {
@@ -30,6 +31,9 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
     if (text.isNotEmpty) {
       context.read<NotesViewModel>().addGlobalLabel(text);
       _newLabelController.clear();
+      setState(() {
+        _searchQuery = ''; // Reset tìm kiếm sau khi thêm
+      });
       _focusNode.requestFocus();
     }
   }
@@ -50,6 +54,11 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
   Widget build(BuildContext context) {
     final viewModel = context.watch<NotesViewModel>();
     final tags = viewModel.allTags;
+    
+    // Lọc danh sách nhãn dựa trên từ khóa tìm kiếm
+    final filteredTags = tags
+        .where((tag) => tag.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .toList();
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -67,7 +76,7 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ),
-            // Ô nhập nhãn mới
+            // Ô nhập nhãn mới / Tìm kiếm
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: Row(
@@ -78,8 +87,13 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
                     child: TextField(
                       controller: _newLabelController,
                       focusNode: _focusNode,
+                      onChanged: (text) {
+                        setState(() {
+                          _searchQuery = text.trim();
+                        });
+                      },
                       decoration: const InputDecoration(
-                        hintText: 'Tạo nhãn mới',
+                        hintText: 'Tạo nhãn mới hoặc tìm kiếm...',
                         border: InputBorder.none,
                         isDense: true,
                       ),
@@ -98,9 +112,9 @@ class _EditLabelsDialogState extends State<EditLabelsDialog> {
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
-                itemCount: tags.length,
+                itemCount: filteredTags.length,
                 itemBuilder: (context, index) {
-                  final tag = tags[index];
+                  final tag = filteredTags[index];
                   final isEditing = _editingLabel == tag;
 
                   if (isEditing) {
