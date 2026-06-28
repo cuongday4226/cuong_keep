@@ -42,4 +42,9 @@ class ThemeViewModel extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('is_list_view', _isListView);
   }
+
+  void toggleThemeMode() async {
+    ThemeMode newMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    await setThemeMode(newMode);
+  }
 }

@@ -283,7 +283,7 @@ class NotesViewModel extends ChangeNotifier {
 
   Future<void> moveSelectedNotesToTrash() async {
     if (_selectedNoteIds.isEmpty) return;
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
         const NotesCompanion(isDeleted: drift.Value(true))
       );
@@ -294,7 +294,7 @@ class NotesViewModel extends ChangeNotifier {
 
   Future<void> restoreSelectedNotes() async {
     if (_selectedNoteIds.isEmpty) return;
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
         const NotesCompanion(isDeleted: drift.Value(false))
       );
@@ -305,7 +305,7 @@ class NotesViewModel extends ChangeNotifier {
 
   Future<void> permanentlyDeleteSelectedNotes() async {
     if (_selectedNoteIds.isEmpty) return;
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       _deleteNoteFiles(id);
       await (_db.delete(_db.notes)..where((t) => t.id.equals(id))).go();
     }
@@ -331,14 +331,14 @@ class NotesViewModel extends ChangeNotifier {
   Future<void> togglePinSelectedNotes() async {
     if (_selectedNoteIds.isEmpty) return;
     bool allPinned = true;
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       final note = _allNotes.firstWhere((n) => n.id == id);
       if (!note.isPinned) {
         allPinned = false;
         break;
       }
     }
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
         NotesCompanion(isPinned: drift.Value(!allPinned))
       );
@@ -353,7 +353,7 @@ class NotesViewModel extends ChangeNotifier {
     if (_selectedNoteIds.isEmpty) return false;
     
     int count = 0;
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       final note = _allNotes.firstWhere((n) => n.id == id);
       if (note.tags != null && note.tags!.contains(tag)) {
         count++;
@@ -372,7 +372,7 @@ class NotesViewModel extends ChangeNotifier {
     // Nếu đang là true, ta sẽ gỡ nhãn khỏi toàn bộ (đổi thành false)
     bool shouldAdd = currentState != true;
 
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       final note = _allNotes.firstWhere((n) => n.id == id);
       List<String> currentTags = note.tags != null ? List<String>.from(note.tags!) : [];
       bool changed = false;
@@ -398,14 +398,14 @@ class NotesViewModel extends ChangeNotifier {
   Future<void> toggleArchiveSelectedNotes() async {
     if (_selectedNoteIds.isEmpty) return;
     bool allArchived = true;
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       final note = _allNotes.firstWhere((n) => n.id == id);
       if (!note.isArchived) {
         allArchived = false;
         break;
       }
     }
-    for (int id in _selectedNoteIds) {
+    for (int id in _selectedNoteIds.toList()) {
       await (_db.update(_db.notes)..where((t) => t.id.equals(id))).write(
         NotesCompanion(
           isArchived: drift.Value(!allArchived),
@@ -431,7 +431,7 @@ class NotesViewModel extends ChangeNotifier {
     // Tính toán orderIndex mới (Nối đuôi vào cuối danh sách)
     int newOrderIndex = 0;
     if (_allNotes.isNotEmpty) {
-      newOrderIndex = _allNotes.last.orderIndex + 1;
+      newOrderIndex = _allNotes.map((n) => n.orderIndex).reduce((a, b) => a > b ? a : b) + 1;
     }
     
     await _db.into(_db.notes).insert(
@@ -567,6 +567,13 @@ class NotesViewModel extends ChangeNotifier {
     // Để giữ nguyên dải orderIndex của nhóm note này, không đè lên orderIndex của archived/trash
     List<int> currentOrderIndices = notesToUpdate.map((n) => n.orderIndex).toList();
     currentOrderIndices.sort();
+
+    // Sửa lỗi trùng lặp orderIndex (ví dụ khi các note đều có orderIndex = 0)
+    for (int i = 1; i < currentOrderIndices.length; i++) {
+      if (currentOrderIndices[i] <= currentOrderIndices[i - 1]) {
+        currentOrderIndices[i] = currentOrderIndices[i - 1] + 1;
+      }
+    }
 
     // 1. CẬP NHẬT BỘ NHỚ & GIAO DIỆN NGAY LẬP TỨC (Đồng bộ)
     // Giúp UI không bị nháy dữ liệu hoặc khựng lại lúc thả chuột

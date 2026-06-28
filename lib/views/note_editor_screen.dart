@@ -88,6 +88,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         });
       });
     }
+
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
   }
 
   // Hàm tải dữ liệu ghi chú cũ để điền sẵn vào màn hình
@@ -117,15 +119,39 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   // Đây là nơi bắt buộc phải "hủy" các Controller đi để giải phóng RAM cho máy tính
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     _titleController.dispose();
     _contentController.dispose();
     super.dispose();
   }
 
+  bool _handleKeyEvent(KeyEvent event) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+
+    if (event is KeyDownEvent) {
+      final isCtrl = HardwareKeyboard.instance.isControlPressed;
+      final isShift = HardwareKeyboard.instance.isShiftPressed;
+      final key = event.logicalKey;
+
+      if (key == LogicalKeyboardKey.escape) {
+        _saveNoteAndPop();
+        return true;
+      } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyS) {
+        _saveNote();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã lưu ghi chú')));
+        return true;
+      } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyL) {
+        _showTagsDialog();
+        return true;
+      }
+    }
+    return false;
+  }
+
   bool _isSaving = false;
 
   // Hàm lưu ghi chú và thoát
-  Future<void> _saveNoteAndPop() async {
+  Future<void> _saveNote({bool popAfter = false}) async {
     if (_isSaving) return;
     _isSaving = true;
 
@@ -135,7 +161,8 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     // Nếu cả tiêu đề, nội dung và ảnh đều trống -> KHÔNG lưu gì cả
     bool isChecklistEmpty = _checklistItems.isEmpty || _checklistItems.every((e) => e.text.trim().isEmpty);
     if (title.isEmpty && content.isEmpty && _imagePaths.isEmpty && isChecklistEmpty) {
-      if (mounted) context.pop();
+      if (popAfter && mounted) context.pop();
+      _isSaving = false;
       return;
     }
 
@@ -161,9 +188,14 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       }
     }
 
-    if (mounted) {
+    if (popAfter && mounted) {
       context.pop();
     }
+    _isSaving = false;
+  }
+
+  Future<void> _saveNoteAndPop() async {
+    await _saveNote(popAfter: true);
   }
 
   // Hàm xóa ghi chú (chuyển vào thùng rác)
@@ -310,46 +342,51 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   // Hàm build() chứa toàn bộ giao diện màn hình
   // --- TÍNH NĂNG AI ---
+
+  Future<bool> _promptApiKey() async {
+    final keyController = TextEditingController();
+    final bool? keySaved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nhập Google Gemini API Key'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Để sử dụng AI miễn phí, bạn cần cung cấp Gemini API Key (lấy từ aistudio.google.com).'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: keyController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'API Key',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+          FilledButton(
+            onPressed: () async {
+              if (keyController.text.isNotEmpty) {
+                await AIService.saveApiKey(keyController.text);
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              }
+            },
+            child: const Text('Lưu Key'),
+          ),
+        ],
+      ),
+    );
+    return keySaved == true;
+  }
+
   Future<void> _openAIBottomSheet() async {
     // 1. Kiểm tra API Key
     final hasKey = await AIService.hasApiKey();
     if (!hasKey && mounted) {
-      final keyController = TextEditingController();
-      final bool? keySaved = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Nhập Google Gemini API Key'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Để sử dụng AI miễn phí, bạn cần cung cấp Gemini API Key (lấy từ aistudio.google.com).'),
-              const SizedBox(height: 12),
-              TextField(
-                controller: keyController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'API Key',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
-            FilledButton(
-              onPressed: () async {
-                if (keyController.text.isNotEmpty) {
-                  await AIService.saveApiKey(keyController.text);
-                  if (ctx.mounted) Navigator.pop(ctx, true);
-                }
-              },
-              child: const Text('Lưu Key'),
-            ),
-          ],
-        ),
-      );
-
-      if (keySaved != true) return; // Hủy
+      final keySaved = await _promptApiKey();
+      if (!keySaved) return; // Hủy
     }
 
     if (!mounted) return;
@@ -408,7 +445,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     context: context,
                     builder: (context) => AlertDialog(
                       title: const Text('Đổi API Key?'),
-                      content: const Text('Bạn có chắc chắn muốn đổi API Key không? Hành động này sẽ xóa API Key hiện tại của bạn khỏi hệ thống.'),
+                      content: const Text('Bạn có chắc chắn muốn đổi API Key không? Hành động này sẽ ghi đè lên API Key hiện tại của bạn.'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context, false),
@@ -422,8 +459,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     ),
                   );
                   if (confirm == true) {
-                    await AIService.saveApiKey('');
-                    if (mounted) _openAIBottomSheet();
+                    await AIService.saveApiKey(''); // Xóa key cũ
+                    final keySaved = await _promptApiKey();
+                    if (keySaved && mounted) {
+                      _openAIBottomSheet();
+                    }
                   }
                 },
               ),
@@ -489,7 +529,24 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Tắt loading
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi AI: $e'), backgroundColor: Colors.red));
+        String errorString = e.toString();
+        String displayMessage = 'Lỗi AI: $errorString';
+        
+        if (errorString.toLowerCase().contains('quota') || errorString.contains('429') || errorString.toLowerCase().contains('exhausted')) {
+          displayMessage = 'Bạn đã thao tác quá nhanh! Vui lòng chờ khoảng 1 phút rồi thử lại nhé (Giới hạn bản miễn phí).';
+        } else if (errorString.contains('API_KEY_INVALID') || errorString.toLowerCase().contains('api key not valid')) {
+          displayMessage = 'API Key của bạn không hợp lệ. Vui lòng kiểm tra lại.';
+        } else if (errorString.contains('503') || errorString.toLowerCase().contains('high demand') || errorString.contains('UNAVAILABLE')) {
+          displayMessage = 'Máy chủ Google AI hiện đang quá tải. Vui lòng thử lại sau vài phút nhé!';
+        } else {
+          displayMessage = 'Sự cố AI: $errorString';
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(displayMessage), 
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ));
       }
     }
   }

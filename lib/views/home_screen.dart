@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
@@ -25,14 +26,97 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _drawerTagSearchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   String _drawerTagSearchQuery = '';
   bool _isTagsExpanded = true;
 
   @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+  }
+
+  @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
     _searchController.dispose();
     _drawerTagSearchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent != true) return false;
+
+    if (event is KeyDownEvent) {
+      final isCtrl = HardwareKeyboard.instance.isControlPressed;
+      final isShift = HardwareKeyboard.instance.isShiftPressed;
+      final key = event.logicalKey;
+      final notesVM = context.read<NotesViewModel>();
+
+      if (key == LogicalKeyboardKey.escape) {
+        if (notesVM.isSelectionMode) {
+          notesVM.clearSelection();
+          return true;
+        } else if (_searchFocusNode.hasFocus) {
+          _searchFocusNode.unfocus();
+          return true;
+        }
+      } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyF) {
+        _searchFocusNode.requestFocus();
+        return true;
+      } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyN) {
+        context.push('/note');
+        return true;
+      } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyA) {
+        final visibleNotes = notesVM.notes;
+        if (visibleNotes.isNotEmpty) {
+          for (var note in visibleNotes) {
+            if (!notesVM.selectedNoteIds.contains(note.id)) {
+              notesVM.toggleSelection(note.id);
+            }
+          }
+        }
+        return true;
+      } else if (key == LogicalKeyboardKey.delete) {
+        if (notesVM.selectedNoteIds.isNotEmpty) {
+          if (notesVM.currentFilter == NoteFilter.trash) {
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Xóa vĩnh viễn?'),
+                content: const Text('Các ghi chú này sẽ bị xóa vĩnh viễn và không thể khôi phục.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
+                  TextButton(
+                    onPressed: () {
+                      notesVM.permanentlyDeleteSelectedNotes();
+                      Navigator.pop(ctx);
+                    },
+                    child: const Text('Xóa', style: TextStyle(color: Colors.red)),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            notesVM.moveSelectedNotesToTrash();
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã chuyển vào thùng rác')));
+          }
+          return true;
+        }
+      } else if (isCtrl && isShift && key == LogicalKeyboardKey.keyT) {
+        context.read<ThemeViewModel>().toggleThemeMode();
+        return true;
+      } else if (isCtrl && !isShift && key == LogicalKeyboardKey.keyL) {
+        if (notesVM.selectedNoteIds.isNotEmpty) {
+          _showTagsDialogForSelection(notesVM);
+        } else {
+          showDialog(context: context, builder: (_) => const EditLabelsDialog());
+        }
+        return true;
+      }
+    }
+    return false;
   }
 
   @override
@@ -94,8 +178,12 @@ class _HomeScreenState extends State<HomeScreen> {
             AnimatedSize(
               duration: const Duration(milliseconds: 300),
               curve: Curves.easeInOutCubic,
-              child: !_isTagsExpanded ? const SizedBox.shrink() : Column(
-                children: [
+              alignment: Alignment.topCenter,
+              clipBehavior: Clip.hardEdge,
+              child: !_isTagsExpanded ? const SizedBox(width: double.infinity, height: 0) : SizedBox(
+                width: double.infinity,
+                child: Column(
+                  children: [
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 4),
                     child: TextField(
@@ -145,6 +233,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
+            ),
             ),
           ],
           const Divider(indent: 28, endIndent: 28),
@@ -226,6 +315,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: TextField(
             controller: _searchController,
+            focusNode: _searchFocusNode,
             onChanged: (text) {
               context.read<NotesViewModel>().setSearchQuery(text); // Gửi chữ về ViewModel để lọc
             },
@@ -298,10 +388,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onDestinationSelected(int index, NotesViewModel notesVM) {
-    if (index == 0) notesVM.setFilter(NoteFilter.notes);
-    else if (index == 1) notesVM.setFilter(NoteFilter.reminders);
-    else if (index == 2) notesVM.setFilter(NoteFilter.archive);
-    else if (index == 3) notesVM.setFilter(NoteFilter.trash);
+    if (index == 0) {
+      notesVM.setFilter(NoteFilter.notes);
+    } else if (index == 1) {
+      notesVM.setFilter(NoteFilter.reminders);
+    } else if (index == 2) {
+      notesVM.setFilter(NoteFilter.archive);
+    } else if (index == 3) {
+      notesVM.setFilter(NoteFilter.trash);
+    }
     Navigator.pop(context);
   }
 
@@ -827,6 +922,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverReorderableList(
                       itemCount: viewModel.pinnedNotes.length,
+                      proxyDecorator: (Widget child, int index, Animation<double> animation) {
+                        return AnimatedBuilder(
+                          animation: animation,
+                          builder: (BuildContext context, Widget? child) {
+                            final double animValue = Curves.easeInOut.transform(animation.value);
+                            final double scale = 1.0 + (0.05 * animValue);
+                            final double elevation = 8.0 * animValue;
+                            return Material(
+                              elevation: elevation,
+                              color: Colors.transparent,
+                              shadowColor: Colors.black45,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Transform.scale(
+                                scale: scale,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: child,
+                        );
+                      },
                       findChildIndexCallback: (Key key) {
                         if (key is ValueKey<String>) {
                           final String val = key.value;
@@ -865,6 +981,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     sliver: SliverToBoxAdapter(
                       child: ReorderableBuilder(
                         enableDraggable: !viewModel.isSelectionMode,
+                        dragChildBoxDecoration: BoxDecoration(
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.25),
+                              blurRadius: 15,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         longPressDelay: Duration.zero,
                         onReorder: (List<Note> Function(List<Note>) reorderedListFunction) {
                           viewModel.reorderPinnedNotesWithFunction(reorderedListFunction);
@@ -906,6 +1032,27 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverReorderableList(
                       itemCount: viewModel.unpinnedNotes.length,
+                      proxyDecorator: (Widget child, int index, Animation<double> animation) {
+                        return AnimatedBuilder(
+                          animation: animation,
+                          builder: (BuildContext context, Widget? child) {
+                            final double animValue = Curves.easeInOut.transform(animation.value);
+                            final double scale = 1.0 + (0.05 * animValue);
+                            final double elevation = 8.0 * animValue;
+                            return Material(
+                              elevation: elevation,
+                              color: Colors.transparent,
+                              shadowColor: Colors.black45,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Transform.scale(
+                                scale: scale,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: child,
+                        );
+                      },
                       findChildIndexCallback: (Key key) {
                         if (key is ValueKey<String>) {
                           final String val = key.value;
@@ -944,6 +1091,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     sliver: SliverToBoxAdapter(
                       child: ReorderableBuilder(
                         enableDraggable: !viewModel.isSelectionMode,
+                        dragChildBoxDecoration: BoxDecoration(
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.25),
+                              blurRadius: 15,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         longPressDelay: Duration.zero,
                         onReorder: (List<Note> Function(List<Note>) reorderedListFunction) {
                           viewModel.reorderUnpinnedNotesWithFunction(reorderedListFunction);
@@ -1178,12 +1335,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       title: const Text('Đổi API Key AI'),
                       subtitle: const Text('Xóa API Key cũ để cài đặt Key mới'),
                       onTap: () async {
-                        Navigator.pop(context);
+                        Navigator.pop(context); // Đóng menu settings
+                        
                         final confirm = await showDialog<bool>(
                           context: this.context,
                           builder: (ctx) => AlertDialog(
                             title: const Text('Đổi API Key?'),
-                            content: const Text('Bạn có chắc chắn muốn đổi API Key không? Hành động này sẽ xóa API Key hiện tại của bạn khỏi hệ thống.'),
+                            content: const Text('Bạn có chắc chắn muốn đổi API Key không? Hành động này sẽ ghi đè lên API Key hiện tại của bạn.'),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, false),
@@ -1196,14 +1354,48 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                         );
-                        if (confirm == true) {
-                          await AIService.saveApiKey('');
-                          if (mounted) {
-                            ScaffoldMessenger.of(this.context).showSnackBar(
-                              const SnackBar(content: Text('Đã xóa API Key. Vui lòng bấm vào nút Cây đũa thần để nhập Key mới.')),
-                            );
-                          }
-                        }
+                        
+                        if (confirm != true) return;
+
+                        // Xóa key cũ trước khi nhập key mới
+                        await AIService.saveApiKey('');
+                        
+                        // Hiển thị dialog để nhập API key mới
+                        if (!mounted) return;
+                        final keyController = TextEditingController();
+                        await showDialog<bool>(
+                          context: this.context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Nhập Google Gemini API Key'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text('Để sử dụng AI miễn phí, bạn cần cung cấp Gemini API Key (lấy từ aistudio.google.com).'),
+                                const SizedBox(height: 12),
+                                TextField(
+                                  controller: keyController,
+                                  obscureText: true,
+                                  decoration: const InputDecoration(
+                                    labelText: 'API Key',
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+                              FilledButton(
+                                onPressed: () async {
+                                  if (keyController.text.isNotEmpty) {
+                                    await AIService.saveApiKey(keyController.text);
+                                    if (ctx.mounted) Navigator.pop(ctx, true);
+                                  }
+                                },
+                                child: const Text('Lưu Key'),
+                              ),
+                            ],
+                          ),
+                        );
                       },
                     ),
                   ],

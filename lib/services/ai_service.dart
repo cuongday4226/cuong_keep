@@ -30,7 +30,7 @@ class AIService {
       throw Exception('Vui lòng nhập Google Gemini API Key trước khi sử dụng.');
     }
     return GenerativeModel(
-      model: 'gemini-2.5-flash-lite',
+      model: 'gemini-2.0-flash',
       apiKey: apiKey,
     );
   }
