@@ -30,7 +30,7 @@ class AIService {
       throw Exception('Vui lòng nhập Google Gemini API Key trước khi sử dụng.');
     }
     return GenerativeModel(
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       apiKey: apiKey,
     );
   }
@@ -68,6 +68,7 @@ $content
 Yêu cầu:
 - Chỉ trả về nội dung đã được sửa.
 - Không giải thích lỗi, không thêm câu mào đầu.
+- Nếu nội dung gốc có chứa các mục danh sách dạng "[ ] " hoặc "[x] ", BẮT BUỘC phải giữ nguyên định dạng này ở đầu mỗi dòng tương ứng trong kết quả trả về.
 ''';
     final response = await model.generateContent([Content.text(prompt)]);
     return response.text ?? content;

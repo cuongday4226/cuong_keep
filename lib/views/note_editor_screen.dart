@@ -476,7 +476,19 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   Future<void> _runAIAction(String action) async {
     final title = _titleController.text;
-    final content = _contentController.text;
+    String content = _contentController.text;
+
+    // Lấy nội dung từ Checklist nếu có
+    if (_isChecklist && _checklistItems.isNotEmpty) {
+      final checklistText = _checklistItems.map((item) {
+        return '${item.isCompleted ? '[x]' : '[ ]'} ${item.text}';
+      }).join('\n');
+      if (content.isNotEmpty) {
+        content += '\n\nDanh sách các mục:\n' + checklistText;
+      } else {
+        content = checklistText;
+      }
+    }
 
     if (content.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập nội dung trước khi dùng AI.')));
@@ -502,12 +514,44 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       if (action == 'summarize') {
         final summary = await AIService.summarize(title, content);
         setState(() {
-          _contentController.text = '${_contentController.text}\n\n--- TÓM TẮT BỞI AI ---\n$summary';
+          if (_contentController.text.trim().isEmpty) {
+             _contentController.text = '--- TÓM TẮT BỞI AI ---\n$summary';
+          } else {
+             _contentController.text = '${_contentController.text}\n\n--- TÓM TẮT BỞI AI ---\n$summary';
+          }
         });
       } else if (action == 'grammar') {
         final fixedText = await AIService.fixGrammar(title, content);
         setState(() {
-          _contentController.text = fixedText;
+          if (_isChecklist) {
+            final lines = fixedText.split('\n');
+            _checklistItems.clear();
+            List<String> plainTextLines = [];
+            for (var line in lines) {
+              if (line.trim().isEmpty) continue;
+              if (line.startsWith('[x] ') || line.startsWith('[X] ')) {
+                _checklistItems.add(ChecklistItem(id: DateTime.now().microsecondsSinceEpoch.toString() + _checklistItems.length.toString(), text: line.substring(4).trim(), isCompleted: true));
+              } else if (line.startsWith('[ ] ')) {
+                _checklistItems.add(ChecklistItem(id: DateTime.now().microsecondsSinceEpoch.toString() + _checklistItems.length.toString(), text: line.substring(4).trim(), isCompleted: false));
+              } else {
+                if (line.trim() != 'Danh sách các mục:') {
+                  plainTextLines.add(line);
+                }
+              }
+            }
+            if (plainTextLines.isNotEmpty) {
+              _contentController.text = plainTextLines.join('\n');
+            } else {
+              _contentController.text = '';
+            }
+            // Nếu AI xóa hết checklist
+            if (_checklistItems.isEmpty) {
+              _contentController.text = fixedText;
+              _isChecklist = false;
+            }
+          } else {
+            _contentController.text = fixedText;
+          }
         });
       } else if (action == 'tags') {
         final newTags = await AIService.generateTags(title, content);
@@ -533,7 +577,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         String displayMessage = 'Lỗi AI: $errorString';
         
         if (errorString.toLowerCase().contains('quota') || errorString.contains('429') || errorString.toLowerCase().contains('exhausted')) {
-          displayMessage = 'Bạn đã thao tác quá nhanh! Vui lòng chờ khoảng 1 phút rồi thử lại nhé (Giới hạn bản miễn phí).';
+          displayMessage = 'Bạn đã thao tác quá nhanh! Vui lòng chờ khoảng 1 phút rồi thử lại nhé.\n\n(Lỗi gốc: $errorString)';
         } else if (errorString.contains('API_KEY_INVALID') || errorString.toLowerCase().contains('api key not valid')) {
           displayMessage = 'API Key của bạn không hợp lệ. Vui lòng kiểm tra lại.';
         } else if (errorString.contains('503') || errorString.toLowerCase().contains('high demand') || errorString.contains('UNAVAILABLE')) {
